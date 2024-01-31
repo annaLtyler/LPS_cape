@@ -27,7 +27,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 all.packages <- c("pheatmap", "qtl2", "cluster")
 load_libraries(all.packages)
 
-load_latest_cape("../../../git_repositories/cape")
+load_latest_cape(here("../../../git_repositories/cape"))
 ```
 
 
