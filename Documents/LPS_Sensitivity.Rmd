@@ -207,7 +207,6 @@ Now we will run cape with the combined temperature PC1 and immune
 molecule matrix.
 
 ```{r cape}
-stop()
 results_dir <- here("Results", "cape")
 final_obj <- run_cape(data_obj, geno_obj, 
     param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
