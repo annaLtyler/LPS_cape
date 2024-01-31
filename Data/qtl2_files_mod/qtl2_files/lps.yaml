@@ -1,0 +1,25 @@
+# Data from F2 cross of B6 and MOLF with temperatures and cytokines following LPS injection
+crosstype: f2
+geno: lps_geno_wdup_filter.csv
+pheno: lps_pheno.csv
+covar: lps_covar.csv
+gmap: lps_gmap_filter.csv
+pmap: lps_pmap_filter.csv
+alleles:
+- B
+- M
+genotypes:
+  BB: 1
+  BM: 2
+  MM: 3
+sex:
+  covar: sex
+  f: female
+  m: male
+cross_info:
+  covar: cross_direction
+  (BxM)x(BxM): 0
+  (MxM)x(MxM): 1
+x_chr: X
+na.strings:
+- '-'
