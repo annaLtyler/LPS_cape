@@ -36,23 +36,28 @@ file and put them into covariates. I also added 'NA' to the na.strings
 argument in the yaml file.
 
 ```{r num_pheno}
-#duplicate all files
-file.copy(here("Data", "qtl2_files"), here("Data", "qtl2_files_mod"), recursive = TRUE)
+#if this is the first time through, create a new data directory
 
-orig.pheno <- read.csv(here("Data", "qtl2_files", "lps_pheno.csv"))
-orig.covar <- read.csv(here("Data", "qtl2_files", "lps_covar.csv"))
+mod.data.dir <- here("Data", "qtl2_files_mod")
 
-nonnum.pheno.col <- c("strain", "category")
-num.pheno.col <- setdiff(colnames(orig.pheno), nonnum.pheno.col)
-nonnum.pheno <- cbind(orig.covar, orig.pheno[,nonnum.pheno.col])
+if(!file.exists(mod.data.dir)){
+    #duplicate all files
+    file.copy(here("Data", "qtl2_files"), mod.data.dir, recursive = TRUE)
 
-num.pheno <- orig.pheno[,num.pheno.col]
+    orig.pheno <- read.csv(here("Data", "qtl2_files", "lps_pheno.csv"))
+    orig.covar <- read.csv(here("Data", "qtl2_files", "lps_covar.csv"))
 
-write.table(num.pheno, here("Data", "qtl2_files_mod", "qtl2_files", "lps_pheno.csv"),
-    sep = ",", quote = FALSE, row.names = FALSE)
-write.table(nonnum.pheno, here("Data", "qtl2_files_mod", "qtl2_files", "lps_covar.csv"), 
-    sep = ",", quote = FALSE, row.names = FALSE)
+    nonnum.pheno.col <- c("strain", "category")
+    num.pheno.col <- setdiff(colnames(orig.pheno), nonnum.pheno.col)
+    nonnum.pheno <- cbind(orig.covar, orig.pheno[,nonnum.pheno.col])
 
+    num.pheno <- orig.pheno[,num.pheno.col]
+
+    write.table(num.pheno, here("Data", "qtl2_files_mod", "qtl2_files", "lps_pheno.csv"),
+        sep = ",", quote = FALSE, row.names = FALSE)
+    write.table(nonnum.pheno, here("Data", "qtl2_files_mod", "qtl2_files", "lps_covar.csv"), 
+        sep = ",", quote = FALSE, row.names = FALSE)
+}
 ```
 
 ```{r load_data}
@@ -202,6 +207,7 @@ Now we will run cape with the combined temperature PC1 and immune
 molecule matrix.
 
 ```{r cape}
+stop()
 results_dir <- here("Results", "cape")
 final_obj <- run_cape(data_obj, geno_obj, 
     param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
