@@ -1,0 +1,209 @@
+---
+title: "LPS Sensitivity"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+
+The purpose of this workflow is to start exploring the LPS sensitivity
+data and to run cape on it to see if there any informative interactions.
+
+
+
+```{r setup}
+rm(list = ls())
+
+library(here)
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+
+all.packages <- c("pheatmap", "qtl2", "cluster")
+load_libraries(all.packages)
+
+load_latest_cape("../../git_repositories/cape")
+```
+
+
+We need to take the non-numeric phenotypes out of the phenotype
+file and put them into covariates. I also added 'NA' to the na.strings
+argument in the yaml file.
+
+```{r num_pheno}
+#duplicate all files
+file.copy(here("Data", "qtl2_files"), here("Data", "qtl2_files_mod"), recursive = TRUE)
+
+orig.pheno <- read.csv(here("Data", "qtl2_files", "lps_pheno.csv"))
+orig.covar <- read.csv(here("Data", "qtl2_files", "lps_covar.csv"))
+
+nonnum.pheno.col <- c("strain", "category")
+num.pheno.col <- setdiff(colnames(orig.pheno), nonnum.pheno.col)
+nonnum.pheno <- cbind(orig.covar, orig.pheno[,nonnum.pheno.col])
+
+num.pheno <- orig.pheno[,num.pheno.col]
+
+write.table(num.pheno, here("Data", "qtl2_files_mod", "qtl2_files", "lps_pheno.csv"),
+    sep = ",", quote = FALSE, row.names = FALSE)
+write.table(nonnum.pheno, here("Data", "qtl2_files_mod", "qtl2_files", "lps_covar.csv"), 
+    sep = ",", quote = FALSE, row.names = FALSE)
+
+```
+
+```{r load_data}
+#add 'NA' to the na.strings arguments in the yaml file to 
+#suppress the warning about "NAs introduced by coercion"
+lps <- read_cross2(here("Data", "qtl2_files_mod", "qtl2_files", "lps.yaml"))
+lps_cape <- qtl2_to_cape(lps)
+
+data_obj <- lps_cape$data_obj
+geno_obj <- lps_cape$geno_obj
+```
+
+Body temperature was measured hourly for seven hours post
+LPS injection. The following plot shows a heatmap of the 
+temperatures after the injection. There are several patterns.
+Some temperatures stay fairly steady. Others dip a bit after
+a few hours, and some really drop in the last couple hours
+of the experiment. In some animals the temperatures go up
+initially, and others hold more steady before dropping.
+
+```{r explore_pheno, fig.width = 5, fig.height = 7}
+temp.idx <- grep("X", colnames(data_obj$pheno))
+temp.label <- gsub("X", "", colnames(data_obj$pheno)[temp.idx])
+temp <- data_obj$pheno[,temp.idx]
+
+pheatmap(temp, cluster_cols = FALSE)
+```
+
+
+```{r k}
+k = 7
+```
+
+We can cluster the tamperature profiles hierarchically
+to see the different patterns. The following heatmap
+shows the cluster assignments for `r k` clusters.
+
+```{r cluster_temp, fig.width = 5, fig.height = 7}
+
+temp_clust <- hclust(dist(temp))
+cl <- cutree(temp_clust, k = k)
+
+cl_annot <- data.frame("cluster" = as.factor(cl))
+rownames(cl_annot) <- rownames(temp)
+pheatmap(temp, annotation_row = cl_annot, cluster_cols = FALSE)
+```
+
+If we plot the profiles out for each cluster independently,
+we can better see the different profiles.
+
+```{r cluster_sep, fig.width = 9, fig.height = 7}
+
+layout.mat <- get.layout.mat(k)
+layout(layout.mat)
+for(cl.k in 1:k){
+    plot.new()
+    plot.window(xlim = c(1,ncol(temp)), ylim = c(min(temp),  max(temp)))
+    cl.idx <- which(cl == cl.k)
+    axis(1);mtext("Hrs", side = 1, line = 2.5)
+    axis(2);mtext("Temp (C)", side = 2, line = 2.5)
+    mtext(paste("Cluster", cl.k), side = 3)
+    for(i in 1:length(cl.idx)){
+        points(1:ncol(temp), temp[cl.idx[i],], col = cl[cl.idx[i]], type = "b", pch = 16)
+    }
+}
+
+```
+
+If we plot the first two principal components of the temperature
+matrix against each other, we see that the clusters separate along
+the first principal component, which accounts for 84% of the variation
+in temperature. This suggests that the first prinicipal component
+might be a good trait for mapping with.
+
+```{r temp_decomp, fig.width = 5, fig.height = 5}
+temp.decomp <- plot.decomp(temp, cols = cl)
+temp.pc <- temp.decomp$u[,1,drop=FALSE]
+colnames(temp.pc) <- "Temp_PC1"
+rownames(temp.pc) <- rownames(temp)
+data_obj$pheno <- cbind(data_obj$pheno, temp.pc)
+#boxplot(temp.decomp$u[,1]~cl)
+```
+
+The animals in the upper ranges of the first PC of the temperature 
+matrix, also tend to have higher measurements on in the immune
+matrix. 
+
+```{r immune, fig.width = 8, fig.height = 8}
+immune <- data_obj$pheno[,c("Il.1b", "Il.6", "TNF", "IFN.b")]
+norm.immune <- apply(immune, 2, rnorm)
+
+par(mfrow = c(2,2))
+for(i in 1:ncol(norm.immune)){
+    plot.with.model(temp.pc, immune[,i], xlab = "Temperature PC 1",
+        ylab = colnames(norm.immune)[i],
+        main = colnames(norm.immune)[i], report = "cor.test",
+        col = cl)
+}
+```
+
+However, there is no correlation if we normalize the immune
+measurements.
+
+```{r norm_immune, fig.width = 8, fig.height = 8}
+par(mfrow = c(2,2))
+for(i in 1:ncol(norm.immune)){
+    plot.with.model(temp.pc, norm.immune[,i], xlab = "Temperature PC 1",
+        ylab = paste("Normalized", colnames(norm.immune)[i]),
+        main = paste("Normalized", colnames(norm.immune)[i]), report = "cor.test",
+        col = cl)
+}
+```
+
+This suggests that there are a few outlier mice that have a 
+huge immune response that also corresponds with a temperature
+drop, but that the smaller variations in the immune molecules
+do not correspond to the temperature response in general. 
+This doesn't really bode well for pulling out interactions 
+with CAPE, but we can still try.
+
+```{r immune_scratch, eval = FALSE}
+pheatmap(immune, scale = "column")
+pairs(immune)
+pairs(norm.immune)
+pheatmap(cor(norm.immune), display_numbers = TRUE)
+pheatmap(cor(immune), display_numbers = TRUE)
+
+boxplot(immune[,4]~cl)
+```
+
+The first PC of the temperature matrix doesn't map anywhere
+significantly, although the Chr 17 locus does look pretty 
+good. Probably MHC?
+
+```{r temp_scan, fig.width = 9, fig.height = 5}
+genoprobs <- calc_genoprob(lps)
+temp.scan <- scan1(genoprobs, temp.pc)
+temp.perm <- scan1perm(genoprobs, temp.pc, n_perm = 100)
+sig.level <- summary(temp.perm, alpha = c(0.05, 0.01, 0.1))
+
+plot(temp.scan, map = lps$pmap, ylim = c(0, max(c(max(temp.scan), max(sig.level)*1.05))),
+    main = "Temp PC1")
+abline(h = sig.level[,1], lty = c(2,1))
+```
+
+Now we will run cape with the combined temperature PC1 and immune
+molecule matrix.
+
+```{r cape}
+results_dir <- here("Results", "cape")
+final_obj <- run_cape(data_obj, geno_obj, 
+    param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
+    results_path = results_dir)
+```
