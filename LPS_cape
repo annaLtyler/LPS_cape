@@ -9,7 +9,7 @@
 #SBATCH --mail-user=anna.tyler@jax.org
 #SBATCH --mail-type=END
 #for now set arguments in Rmd file
-# example use: sbatch LPS_cape
+# example use: sbatch sbatch -q long LPS_cape
 
 cd $SLURM_SUBMIT_DIR
 
