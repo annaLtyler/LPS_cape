@@ -70,6 +70,8 @@ data_obj <- lps_cape$data_obj
 geno_obj <- lps_cape$geno_obj
 ```
 
+## Body Temperature
+
 Body temperature was measured hourly for seven hours post
 LPS injection. The following plot shows a heatmap of the 
 temperatures after the injection. There are several patterns.
@@ -130,7 +132,7 @@ If we plot the first two principal components of the temperature
 matrix against each other, we see that the clusters separate along
 the first principal component, which accounts for 84% of the variation
 in temperature. This suggests that the first prinicipal component
-might be a good trait for mapping with.
+might be a good trait for mapping.
 
 ```{r temp_decomp, fig.width = 5, fig.height = 5}
 temp.decomp <- plot.decomp(temp, cols = cl)
@@ -141,13 +143,15 @@ data_obj$pheno <- cbind(data_obj$pheno, temp.pc)
 #boxplot(temp.decomp$u[,1]~cl)
 ```
 
+## Trait Correlations
+
 The animals in the upper ranges of the first PC of the temperature 
 matrix, also tend to have higher measurements on in the immune
 matrix. 
 
 ```{r immune, fig.width = 8, fig.height = 8}
 immune <- data_obj$pheno[,c("Il.1b", "Il.6", "TNF", "IFN.b")]
-norm.immune <- apply(immune, 2, rnorm)
+norm.immune <- apply(immune, 2, rankZ)
 
 par(mfrow = c(2,2))
 for(i in 1:ncol(norm.immune)){
@@ -158,8 +162,13 @@ for(i in 1:ncol(norm.immune)){
 }
 ```
 
-However, there is no correlation if we normalize the immune
-measurements.
+These correlations extend the range of the values. If we 
+rank Z normalize the values, the correlations are even 
+stronger. There is a floor effect in each of the immune 
+molecules, which is most pronounce in IFN beta. There are 
+animals with a range of temperature profiles that did 
+not have measurable IFN beta.
+
 
 ```{r norm_immune, fig.width = 8, fig.height = 8}
 par(mfrow = c(2,2))
@@ -171,12 +180,6 @@ for(i in 1:ncol(norm.immune)){
 }
 ```
 
-This suggests that there are a few outlier mice that have a 
-huge immune response that also corresponds with a temperature
-drop, but that the smaller variations in the immune molecules
-do not correspond to the temperature response in general. 
-This doesn't really bode well for pulling out interactions 
-with CAPE, but we can still try.
 
 ```{r immune_scratch, eval = FALSE}
 pheatmap(immune, scale = "column")
@@ -188,23 +191,43 @@ pheatmap(cor(immune), display_numbers = TRUE)
 boxplot(immune[,4]~cl)
 ```
 
-The first PC of the temperature matrix doesn't map anywhere
-significantly, although the Chr 17 locus does look pretty 
-good. Probably MHC?
 
-```{r temp_scan, fig.width = 9, fig.height = 5}
+## Individual Trait Mapping {.tabset .tabset-fade .tabset-pills}
+
+As an initial test, we mapped each of the normalized traits.
+
+The first PC of the temperature matrix has a suggestive QTL
+on proximal Chr 17. Maybe the MHC locus? IL6 and TNF also map 
+to Chr 17, although the QTLs look more distal. Neither IL1 beta 
+nor IFN beta map anywhere. 
+
+```{r temp_scan, fig.width = 9, fig.height = 5, results = "asis"}
 genoprobs <- calc_genoprob(lps)
-temp.scan <- scan1(genoprobs, temp.pc)
-temp.perm <- scan1perm(genoprobs, temp.pc, n_perm = 100)
-sig.level <- summary(temp.perm, alpha = c(0.05, 0.01, 0.1))
+full.pheno <- cbind(temp.pc, norm.immune)
+temp.scan <- scan1(genoprobs, full.pheno)
+temp.perm <- scan1perm(genoprobs, full.pheno, n_perm = 100)
+alpha <- c(0.05, 0.01, 0.1)
+sig.level <- summary(temp.perm, alpha = alpha)
 
-plot(temp.scan, map = lps$pmap, ylim = c(0, max(c(max(temp.scan), max(sig.level)*1.05))),
-    main = "Temp PC1")
-abline(h = sig.level[,1], lty = c(2,1))
+for(ph in 1:ncol(full.pheno)){
+    cat("###", colnames(full.pheno)[ph], "\n")
+   plot(temp.scan, lodcol = ph, map = lps$pmap, ylim = c(0, max(c(max(temp.scan), max(sig.level)*1.05))),
+        main = colnames(full.pheno)[ph])
+    plot.dim <- par("usr")
+    plot.width <- plot.dim[2] - plot.dim[1]
+    text.x <- plot.dim[2]-(plot.width*0.007) 
+    line.stop <- plot.dim[2]-(plot.width*0.04) 
+    segments(x0 = 0, x1 = line.stop, y0 = sig.level[,ph], lty = 2)
+    text(x = text.x, y = sig.level[,ph], labels = alpha, adj = 1)
+    cat("\n\n")
+}
 ```
 
-Now we will run cape with the combined temperature PC1 and immune
-molecule matrix.
+## CAPE
+
+Now we run cape with the combined temperature PC1 and immune
+molecule matrix. Please see cape_results.html for results from
+cape.
 
 ```{r cape}
 results_dir <- here("Results", "cape")
