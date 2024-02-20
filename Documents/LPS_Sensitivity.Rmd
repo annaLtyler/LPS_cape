@@ -153,7 +153,13 @@ temp.decomp <- plot.decomp(temp, cols = ordered_cl)
 temp.pc <- temp.decomp$u[,1,drop=FALSE]
 colnames(temp.pc) <- "Temp_PC1"
 rownames(temp.pc) <- rownames(temp)
-data_obj$pheno <- cbind(data_obj$pheno, temp.pc)
+
+#also use the second PC
+temp.pc2  <- temp.decomp$u[,2,drop=FALSE]
+colnames(temp.pc2) <- "Temp_PC2"
+rownames(temp.pc2) <- rownames(temp)
+
+data_obj$pheno <- cbind(data_obj$pheno, temp.pc, temp.pc2)
 #boxplot(temp.decomp$u[,1]~cl)
 ```
 
@@ -189,8 +195,6 @@ achieved. Maybe we should use both PCs with cape.
 ```{r min_max, fig.width = 8, fig.height = 4}
 temp.max <- apply(temp, 1, max)
 temp.min <- apply(temp, 1, min)
-temp.pc2  <- temp.decomp$u[,2,drop=FALSE]
-colnames(temp.pc2) <- "Temp_PC2"
 
 par(mfrow = c(1,2))
 plot.with.model(temp.min, temp.pc, main = "Temp PC1 vs. Tempeature Miminum")
