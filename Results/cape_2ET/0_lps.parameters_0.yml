@@ -3,9 +3,11 @@
 #================================================
 traits:
  - Temp_PC1
+ - Temp_PC2
  - Il.1b
  - Il.6
  - TNF
+ - IFN.b
 covariates:
  - sex
  - cross_direction

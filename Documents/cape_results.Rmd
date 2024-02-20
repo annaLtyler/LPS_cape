@@ -19,11 +19,11 @@ args <- commandArgs(trailingOnly=T)
 results_dir <- args[1]
 
 if(is.na(results_dir)){
-    results_dir <- here("Results", "cape")
+    results_dir <- here("Results", "cape_3ET")
 }
 ```
 
-```{r results_dir}
+```{r results_dir, message = FALSE, error = FALSE, warning = FALSE}
 library(here);library(cape);library(knitr);library(DT)
 ```
 
@@ -382,3 +382,29 @@ kable(rec_table)
 
 Here we describe each output generically. For help interpreting specific 
 results, or generating specific plots, please email <anna.tyler@jax.org>.
+
+
+```{r sandbox, eval = FALSE}
+pdf("~/Desktop/Chr11_Chr17_Interaction.pdf", width = 12, height = 8)
+
+plot_effects(data_obj, geno_obj, marker1 = "S6J112266152_B", 
+    plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
+    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr11")
+    mtext("Main Effect of MOLF genotype at Chr 11 Locus", side = 3, outer = TRUE, line = -1.5)
+
+plot_effects(data_obj, geno_obj, marker1 = "gUNC28162302_B", 
+    plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
+    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr17")
+    mtext("Main Effect of MOLF genotype at Chr 17 Locus", side = 3, outer = TRUE, line = -1.5)
+
+plot_effects(data_obj, geno_obj, marker1 = "S6J112266152_B", marker2 = "gUNC28162302_B", 
+    plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
+    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr11",
+    marker2_label = "Chr17")
+
+plot_effects(data_obj, geno_obj, "S6J112266152_B", "gUNC28162302_B", 
+    plot_type = "b", error_bars = "se", pheno_type = "Normalized", 
+    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr11",
+    marker2_label = "Chr17")
+dev.off()
+```

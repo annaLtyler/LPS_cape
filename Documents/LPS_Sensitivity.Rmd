@@ -16,7 +16,7 @@ data and to run cape on it to see if there any informative interactions.
 
 
 
-```{r setup}
+```{r setup, warning = FALSE, message = FALSE, error = FALSE}
 rm(list = ls())
 
 library(here)
@@ -60,7 +60,7 @@ if(!file.exists(mod.data.dir)){
 }
 ```
 
-```{r load_data}
+```{r load_data, message = FALSE, error = FALSE, warning = FALSE}
 #add 'NA' to the na.strings arguments in the yaml file to 
 #suppress the warning about "NAs introduced by coercion"
 lps <- read_cross2(here("Data", "qtl2_files_mod", "qtl2_files", "lps.yaml"))
@@ -102,13 +102,26 @@ shows the cluster assignments for `r k` clusters.
 temp_clust <- hclust(dist(temp))
 cl <- cutree(temp_clust, k = k)
 
-cl_annot <- data.frame("cluster" = as.factor(cl))
+#reorder cluster based on mean temperature
+cl_temp <- lapply(1:k, function(x) rowMeans(temp[which(cl == x),,drop=FALSE]))
+#boxplot(cl_temp)
+cl_mean <- sapply(cl_temp, mean)
+cl_order <- order(cl_mean, decreasing = TRUE)
+#boxplot(cl_temp[cl_order])
+ordered_cl  <- rep(NA, length(cl))
+for(cl_k in 1:k){
+    ordered_cl[which(cl == cl_order[cl_k])] <- cl_k
+}
+
+cl_annot <- data.frame("cluster" = as.factor(ordered_cl))
 rownames(cl_annot) <- rownames(temp)
 pheatmap(temp, annotation_row = cl_annot, cluster_cols = FALSE)
 ```
 
 If we plot the profiles out for each cluster independently,
-we can better see the different profiles.
+we can better see the different profiles. We've ordered them
+here by the mean temperature for each cluster for ease of 
+comparison.
 
 ```{r cluster_sep, fig.width = 9, fig.height = 7}
 
@@ -117,12 +130,12 @@ layout(layout.mat)
 for(cl.k in 1:k){
     plot.new()
     plot.window(xlim = c(1,ncol(temp)), ylim = c(min(temp),  max(temp)))
-    cl.idx <- which(cl == cl.k)
+    cl.idx <- which(ordered_cl == cl.k)
     axis(1);mtext("Hrs", side = 1, line = 2.5)
     axis(2);mtext("Temp (C)", side = 2, line = 2.5)
     mtext(paste("Cluster", cl.k), side = 3)
     for(i in 1:length(cl.idx)){
-        points(1:ncol(temp), temp[cl.idx[i],], col = cl[cl.idx[i]], type = "b", pch = 16)
+        points(1:ncol(temp), temp[cl.idx[i],], col = ordered_cl[cl.idx[i]], type = "b", pch = 16)
     }
 }
 
@@ -135,7 +148,8 @@ in temperature. This suggests that the first prinicipal component
 might be a good trait for mapping.
 
 ```{r temp_decomp, fig.width = 5, fig.height = 5}
-temp.decomp <- plot.decomp(temp, cols = cl)
+temp.decomp <- plot.decomp(temp, cols = ordered_cl)
+#temp.decomp <- plot.decomp(temp, cols = data_obj$pheno[,"sex"]+1) #no effect of sex
 temp.pc <- temp.decomp$u[,1,drop=FALSE]
 colnames(temp.pc) <- "Temp_PC1"
 rownames(temp.pc) <- rownames(temp)
@@ -143,7 +157,7 @@ data_obj$pheno <- cbind(data_obj$pheno, temp.pc)
 #boxplot(temp.decomp$u[,1]~cl)
 ```
 
-The first PC odf the temperature matrix is more heavily weighted on 
+The first PC of the temperature matrix is more heavily weighted on 
 later temperature measurements than on earlier temperature measurements.
 
 ```{r, fig.width = 9, fig.height = 5}
@@ -155,11 +169,40 @@ for(i in 1:ncol(temp)){
 }
 ```
 
+The second PC of the temperature matrix is more heavily weighted on 
+the mid point temperatures.
+
+```{r, fig.width = 9, fig.height = 5}
+#quartz(width = 9, height = 5)
+par(mfrow = c(2,4))
+for(i in 1:ncol(temp)){
+    plot.with.model(temp[,i], temp.decomp$u[,2,drop=FALSE], main = colnames(temp)[i], xlab = colnames(temp)[i],
+        ylab = "Temp PC1")
+}
+```
+
+The first temperature PC is highly correlated with the minimum 
+temperature each mouse achieved, whereas the second temperature
+PC is highly correlated with the maximum temperature each mouse
+achieved. Maybe we should use both PCs with cape.
+
+```{r min_max, fig.width = 8, fig.height = 4}
+temp.max <- apply(temp, 1, max)
+temp.min <- apply(temp, 1, min)
+temp.pc2  <- temp.decomp$u[,2,drop=FALSE]
+colnames(temp.pc2) <- "Temp_PC2"
+
+par(mfrow = c(1,2))
+plot.with.model(temp.min, temp.pc, main = "Temp PC1 vs. Tempeature Miminum")
+plot.with.model(temp.max, temp.pc2, main = "Temp PC2 vs. Tempeature Maximum")
+```
+
+
 If we look just at the values of PC1 of the temperature matrix, we see 
 that some animals have negative values. The mice with the most negative
-values in PC1 are in cluster 5 above. These are the most reistant to LPS.
+values in PC1 are in cluster 1 above. These are the most reistant to LPS.
 Their temperature barely changes at all. The mice with the most positive
-values in PC1 are in clusters 4 and 5. These mice had the most dramatic 
+values in PC1 are in clusters 6 and 7. These mice had the most dramatic 
 drops in temperature and are the most sensitive to LPS. Thus, the value
 of this PC describes how sensitive or resistant the mice are to LPS 
 as determined by their temperature profile.
@@ -167,7 +210,7 @@ as determined by their temperature profile.
 ```{r pc1, fig.width = 9, fig.height = 5}
 #quartz(width = 9, height = 5.5)
 pc.order <- order(temp.pc)
-plot(temp.pc[pc.order], type = "h", col = cl[pc.order], lwd = 3,
+plot(temp.pc[pc.order], type = "h", col = ordered_cl[pc.order], lwd = 3,
     main = "PC1 by cluster")
 abline(h = 0)
 legend("topleft", legend = paste("Cluster", 1:k), lty = 1, lwd = 3, col = 1:k)
@@ -176,7 +219,6 @@ text(x = 50, y = 0.265, labels = "More LPS resistant", adj = 1)
 arrows(x0 = 60, x1 = 90, y0 = 0.25, lwd = 3)
 text(x = 60, y = 0.265, labels = "More LPS sensitive", adj = 0)
 ```
-
 
 
 ## Trait Correlations
@@ -194,7 +236,7 @@ for(i in 1:ncol(norm.immune)){
     plot.with.model(temp.pc, immune[,i], xlab = "Temperature PC 1",
         ylab = colnames(norm.immune)[i],
         main = colnames(norm.immune)[i], report = "cor.test",
-        col = cl)
+        col = ordered_cl)
 }
 ```
 
@@ -212,19 +254,22 @@ for(i in 1:ncol(norm.immune)){
     plot.with.model(temp.pc, norm.immune[,i], xlab = "Temperature PC 1",
         ylab = paste("Normalized", colnames(norm.immune)[i]),
         main = paste("Normalized", colnames(norm.immune)[i]), report = "cor.test",
-        col = cl)
+        col = ordered_cl)
 }
 ```
 
+The second temperature PC2 is negatively correlated with 
+the cytokines.
 
-```{r immune_scratch, eval = FALSE}
-pheatmap(immune, scale = "column")
-pairs(immune)
-pairs(norm.immune)
-pheatmap(cor(norm.immune), display_numbers = TRUE)
-pheatmap(cor(immune), display_numbers = TRUE)
+```{r immune_pc2, fig.width = 8, fig.height = 8}
 
-boxplot(immune[,4]~cl)
+par(mfrow = c(2,2))
+for(i in 1:ncol(norm.immune)){
+    plot.with.model(temp.pc2, norm.immune[,i], xlab = "Temperature PC 2",
+        ylab = colnames(norm.immune)[i],
+        main = colnames(norm.immune)[i], report = "cor.test",
+        col = ordered_cl)
+}
 ```
 
 
@@ -239,7 +284,7 @@ nor IFN beta map anywhere.
 
 ```{r temp_scan, fig.width = 9, fig.height = 5, results = "asis"}
 genoprobs <- calc_genoprob(lps)
-full.pheno <- cbind(temp.pc, norm.immune)
+full.pheno <- cbind(temp.pc, temp.pc2, norm.immune)
 temp.scan <- scan1(genoprobs, full.pheno)
 temp.perm <- scan1perm(genoprobs, full.pheno, n_perm = 100)
 alpha <- c(0.05, 0.01, 0.1)
@@ -266,7 +311,7 @@ molecule matrix. Please see cape_results.html for results from
 cape.
 
 ```{r cape}
-results_dir <- here("Results", "cape_3ET")
+results_dir <- here("Results", "cape_2ET")
 final_obj <- run_cape(data_obj, geno_obj, 
     param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
     results_path = results_dir)
