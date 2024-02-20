@@ -315,7 +315,7 @@ molecule matrix. Please see cape_results.html for results from
 cape.
 
 ```{r cape}
-results_dir <- here("Results", "cape_3ET")
+results_dir <- here("Results", "cape_2ET")
 final_obj <- run_cape(data_obj, geno_obj, 
     param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
     results_path = results_dir)
