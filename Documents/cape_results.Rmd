@@ -15,11 +15,13 @@ Set the working directory below and run this workflow to see figures of results
 with explanations.
 
 ```{r set_path}
+rm(list = ls())
 args <- commandArgs(trailingOnly=T)
 results_dir <- args[1]
 
+library("here")
 if(is.na(results_dir)){
-    results_dir <- here("Results", "cape_3ET")
+    results_dir <- here("Results", "cape_2ET")
 }
 ```
 
@@ -402,7 +404,7 @@ plot_effects(data_obj, geno_obj, marker1 = "S6J112266152_B", marker2 = "gUNC2816
     gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr11",
     marker2_label = "Chr17")
 
-plot_effects(data_obj, geno_obj, "S6J112266152_B", "gUNC28162302_B", 
+plot_effects(data_obj, geno_obj, marker1 = "gUNC23228208_B", marker2 = "gUNC13446795_B", 
     plot_type = "b", error_bars = "se", pheno_type = "Normalized", 
     gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr11",
     marker2_label = "Chr17")
