@@ -322,6 +322,30 @@ final_obj <- run_cape(data_obj, geno_obj,
     results_path = results_dir)
 ```
 
+```{r cape_heterosis}
+#run cape with a coding for heterosis.
+#AA and BB are 0 and A/B is 1
+code_heterosis <- function(marker_geno){
+    new.geno <- matrix(0, nrow = nrow(marker_geno), ncol = ncol(marker_geno))
+    dimnames(new.geno) <- dimnames(marker_geno)
+    which.hom <- union(which(marker_geno[,1] > 0.9), which(marker_geno[,2] > 0.9))
+    new.geno[which.hom,1] <- 1
+    which.het <- intersect(which(marker_geno[,1] < 0.6), which(marker_geno[,2] < 0.6))
+    new.geno[which.het,2] <- 1
+    return(new.geno)
+}
+
+heterosis_markers <- lapply(1:dim(geno_obj)[3], function(x) code_heterosis(geno_obj[,,x]))
+heterosis_geno <- abind(heterosis_markers, along = 3)
+dimnames(heterosis_geno) <- dimnames(geno_obj)
+
+results_dir <- here("Results", "cape_heterosis")
+final_obj <- run_cape(data_obj, heterosis_geno, 
+    param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
+    results_path = results_dir)
+
+```
+
 ## Hardy-Weinberg and LD
 
 It looks as if there might be some deviations from Hardy-Weinberg
@@ -485,7 +509,7 @@ p values. In each case there seems to be a depletion of B6/B6
 genotypes. These markers are on Chr 2 between 172 and 174 Mb, 
 and Chr 4 between 53 and 58 Mb. In all cases it looks as if 
 there is a slight enrichment for MOLF homozygotes and a slight
-depletion of B6 homozygotes.
+depletion of B6 homozygotes. 
 .
 
 ```{r sig_hw, fig.height = 8, fig.width = 8}
