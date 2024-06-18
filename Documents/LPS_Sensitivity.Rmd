@@ -498,7 +498,7 @@ for(ch in 1:(length(genoprobs)-1)){
 
 
 par(mfrow = c(2,2))
-hist(unlist(hw_p), main = "HW q value distribution across all markers", xlab = "p value")
+hist(unlist(hw_p), main = "HW p value distribution across all markers", xlab = "p value")
 qqunif.plot(unlist(hw_p), plot.label = "QQ plot of HW p values")
 hist(-log10(unlist(hw_p)), main = "Distribution of -log10(p values)",
     xlab = "-log10(p value)")
