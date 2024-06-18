@@ -387,26 +387,34 @@ results, or generating specific plots, please email <anna.tyler@jax.org>.
 
 
 ```{r sandbox, eval = FALSE}
-pdf("~/Desktop/Chr11_Chr17_Interaction.pdf", width = 12, height = 8)
+marker1 <- "gUNC27542675_B"; marker1.chr = 17
+marker2 <- "UNC3290343_B"; marker2.chr = 2
 
-plot_effects(data_obj, geno_obj, marker1 = "S6J112266152_B", 
+pdf(paste0("~/Desktop/Chr", marker1.chr, "_Chr", marker2.chr, "_Interaction.pdf"), width = 12, height = 8)
+
+plot_effects(data_obj, geno_obj, marker1 = marker1, 
     plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr11")
-    mtext("Main Effect of MOLF genotype at Chr 11 Locus", side = 3, outer = TRUE, line = -1.5)
+    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker1.chr)
 
-plot_effects(data_obj, geno_obj, marker1 = "gUNC28162302_B", 
+plot_effects(data_obj, geno_obj, marker1 = marker2, 
     plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr17")
-    mtext("Main Effect of MOLF genotype at Chr 17 Locus", side = 3, outer = TRUE, line = -1.5)
+    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker2.chr)
+    
 
-plot_effects(data_obj, geno_obj, marker1 = "S6J112266152_B", marker2 = "gUNC28162302_B", 
+plot_effects(data_obj, geno_obj, marker1 = marker1, marker2 = marker2, 
     plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr11",
-    marker2_label = "Chr17")
+    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker1.chr,
+    marker2_label = marker2.chr)
 
-plot_effects(data_obj, geno_obj, marker1 = "gUNC23228208_B", marker2 = "gUNC13446795_B", 
+plot_effects(data_obj, geno_obj, marker1 = marker1, marker2 = marker2, 
     plot_type = "b", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = "Chr11",
-    marker2_label = "Chr17")
+    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker2.chr,
+    marker2_label = marker2.chr)
+
+plot_effects(data_obj, geno_obj, marker1 = marker1, marker2 = marker2, 
+    plot_type = "p", error_bars = "se", pheno_type = "Normalized", 
+    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker2.chr,
+    marker2_label = marker2.chr)
+
 dev.off()
 ```
