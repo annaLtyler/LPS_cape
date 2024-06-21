@@ -148,14 +148,17 @@ in temperature. This suggests that the first prinicipal component
 might be a good trait for mapping.
 
 ```{r temp_decomp, fig.width = 5, fig.height = 5}
-temp.decomp <- plot.decomp(temp, cols = ordered_cl)
+temp.decomp <- plot.decomp(temp, plot.results = FALSE)
 #temp.decomp <- plot.decomp(temp, cols = data_obj$pheno[,"sex"]+1) #no effect of sex
-temp.pc <- temp.decomp$u[,1,drop=FALSE]
+#I am flipping this so it is positively correlated with temperature
+temp.pc <- temp.decomp$u[,1,drop=FALSE]*-1
 colnames(temp.pc) <- "Temp_PC1"
 rownames(temp.pc) <- rownames(temp)
 
+plot(temp.decomp$u*-1, col = ordered_cl, pch = 16, xlab = "PC1", ylab = "PC2")
+
 #also use the second PC
-temp.pc2  <- temp.decomp$u[,2,drop=FALSE]
+temp.pc2  <- temp.decomp$u[,2,drop=FALSE]*-1 #also flipping this one for ease of interpretation later
 colnames(temp.pc2) <- "Temp_PC2"
 rownames(temp.pc2) <- rownames(temp)
 
@@ -182,8 +185,8 @@ the mid point temperatures.
 #quartz(width = 9, height = 5)
 par(mfrow = c(2,4))
 for(i in 1:ncol(temp)){
-    plot.with.model(temp[,i], temp.decomp$u[,2,drop=FALSE], main = colnames(temp)[i], xlab = colnames(temp)[i],
-        ylab = "Temp PC1")
+    plot.with.model(temp[,i], temp.pc2, main = colnames(temp)[i], xlab = colnames(temp)[i],
+        ylab = "Temp PC2")
 }
 ```
 
@@ -215,13 +218,13 @@ as determined by their temperature profile.
 #quartz(width = 9, height = 5.5)
 pc.order <- order(temp.pc)
 plot(temp.pc[pc.order], type = "h", col = ordered_cl[pc.order], lwd = 3,
-    main = "PC1 by cluster")
+    main = "PC1 by cluster", ylab = "Temp PC1")
 abline(h = 0)
 legend("topleft", legend = paste("Cluster", 1:k), lty = 1, lwd = 3, col = 1:k)
-arrows(x0 = 50, x1 = 20, y0 = 0.25, lwd = 3)
-text(x = 50, y = 0.265, labels = "More LPS resistant", adj = 1)
-arrows(x0 = 60, x1 = 90, y0 = 0.25, lwd = 3)
-text(x = 60, y = 0.265, labels = "More LPS sensitive", adj = 0)
+arrows(x0 = 50, x1 = 20, y0 = -0.25, lwd = 3)
+text(x = 50, y = -0.265, labels = "More LPS sensitive", adj = 1)
+arrows(x0 = 60, x1 = 90, y0 = -0.25, lwd = 3)
+text(x = 60, y = -0.265, labels = "More LPS resistant", adj = 0)
 ```
 
 
@@ -567,4 +570,51 @@ for(ch in 1:length(not.fshr)){
     }
 }
 
+```
+
+```{r marker_cor, eval = FALSE}
+ind_genotype <- function(marker.geno){
+    ind.geno <- apply(marker.geno, 1, function(x) sum(x*c(0, 0.5, 1)))
+    return(ind.geno)
+}
+
+plot_chr_cor <- function(chr1, chr2, genoprobs){
+
+    chr1.idx <- which(names(genoprobs) == chr1)
+    chr2.idx <- which(names(genoprobs) == chr2)
+
+    chr1.genotypes <- apply(genoprobs[[chr1.idx]], 3, ind_genotype)
+    chr2.genotypes <- apply(genoprobs[[chr2.idx]], 3, ind_genotype)
+
+    chr2.names <- rep("", ncol(chr1.genotypes))
+    chr2.names[median(1:ncol(chr1.genotypes))]  <- paste("Chr", chr1)
+
+    chr4.names <- rep("", ncol(chr2.genotypes))
+    chr4.names[median(1:ncol(chr2.genotypes))]  <- paste("Chr", chr2)
+
+    colnames(chr1.genotypes) <- chr2.names
+    colnames(chr2.genotypes) <- chr4.names
+    geno.cor <- cor(cbind(chr1.genotypes, chr2.genotypes))
+    imageWithText(abs(geno.cor), use.pheatmap.colors = TRUE, show.text = FALSE, col.text.rotation = 0,
+        col.text.shift = 0.03, row.text.shift = 0.03, global.color.scale = TRUE, global.min = 0,
+        global.max = 1)
+    max.x <- ncol(geno.cor)
+    draw.rectangle(max.x - ncol(chr2.genotypes), max.x, 1, ncol(chr2.genotypes), lwd = 3)
+    draw.rectangle(1, ncol(chr1.genotypes), max.x - ncol(chr1.genotypes), max.x, lwd = 3)
+
+    add_color_bar(abs(geno.cor), "topright", use.pheatmap.colors = TRUE, x.min.shift = 0,
+        x.max.shift = -0.03, y.min.shift = 0.03, y.max.shift = 0.05, num.scale.pts = 5,
+        label.buffer = 0.015, global.color.scale = TRUE, global.min = 0,
+        global.max = 1)
+
+    invisible(geno.cor)
+}
+
+chr.pairs <- pair.matrix(names(genoprobs))
+
+pdf("~/Desktop/chr_ld.pdf")
+for(i in 1:nrow(chr.pairs)){
+    plot_chr_cor(chr.pairs[i,1],chr.pairs[i,2], genoprobs)
+}
+dev.off()
 ```
