@@ -21,7 +21,7 @@ results_dir <- args[1]
 
 library("here")
 if(is.na(results_dir)){
-    results_dir <- here("Results", "cape_heterosis")
+    results_dir <- here("Results", "cape_heterosis17")
 }
 ```
 
@@ -254,7 +254,8 @@ main effects.
 var.inf.table <- as.matrix(read.csv(file.path(results_dir, "Variant_Influences.csv"), stringsAsFactors = FALSE))
 var.inf.table[,1] <- gsub("X", "Chr", var.inf.table[,1])
 var.inf.table[,4] <- gsub("X", "Chr", var.inf.table[,4])
-datatable(var.inf.table)
+sig.idx <- which(as.numeric(var.inf.table[,"p_adjusted"]) < 0.05)
+datatable(var.inf.table[sig.idx,])
 ```
 
 ### Just Interactions
@@ -263,7 +264,8 @@ datatable(var.inf.table)
 var.int.table <- as.matrix(read.csv(file.path(results_dir, "Variant_Influences_Interactions.csv"), stringsAsFactors = FALSE))
 var.int.table[,1] <- gsub("X", "Chr", var.int.table[,1])
 var.int.table[,4] <- gsub("X", "Chr", var.int.table[,4])
-datatable(var.int.table)
+sig.idx <- which(as.numeric(var.int.table[,"p_adjusted"]) < 0.05)
+datatable(var.int.table[sig.idx,])
 ```
 
 
@@ -417,4 +419,60 @@ plot_effects(data_obj, geno_obj, marker1 = marker1, marker2 = marker2,
     marker2_label = marker2.chr)
 
 dev.off()
+```
+
+```{r test, eval = FALSE}
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+
+load_latest_cape(here("../../../git_repositories/cape"))
+
+data_obj <- linkage_blocks_network(data_obj, geno_obj, TRUE)
+plot_network(data_obj)
+test <- write_variant_influences(data_obj, 0.05, include_main_effects = FALSE)
+
+gene.info <- read.delim(here("Data", "general", "mouse_gene_info.txt"))
+gene.name <- "Fshr"
+
+gene_block <- function(data_obj, gene.name, gene.info, plot.results = TRUE){
+    gene.idx <- which(gene.info[,"external_gene_name"] == gene.name)
+    if(length(gene.idx) == 0){stop(paste("Cannot find", gene.name))}
+    gene.chr <- gene.info[gene.idx, "chromosome_name"]
+    gene.pos <- gene.info[gene.idx, "start_position"]
+    chr.idx <- which(data_obj$chromosome == gene.chr)
+    chr.pos <- data_obj$marker_location[chr.idx]
+
+    block.chr <- sapply(strsplit(names(data_obj$linkage_blocks_collapsed), "_"), function(x) x[1])
+    chr.idx <- which(block.chr == paste0("Chr", gene.chr))
+    chr.marker.pos <- lapply(data_obj$linkage_blocks_collapsed[chr.idx], function(x) get_marker_location(data_obj, x))
+    inblock <- names(which(sapply(chr.marker.pos, function(x) segments.overlap(min(x), max(x), gene.pos-1, gene.pos+1))))
+    
+    if(plot.results){
+        chr.min <- min(unlist(chr.marker.pos))
+        chr.max <- max(unlist(chr.marker.pos))
+        block.buffer <- (chr.max - chr.min)*0.02
+        plot.new()
+        plot.window(xlim = c(chr.min, chr.max), ylim = c(1, (length(chr.marker.pos)+0.5)))
+        for(i in 1:length(chr.marker.pos)){
+            if(names(chr.marker.pos)[i] %in% inblock){
+                pt.col <- "red"
+            }else{
+                pt.col = "black"
+            }
+            points(chr.marker.pos[[i]], rep(i, length(chr.marker.pos[[i]])), pch = 16, col = pt.col)
+            draw.rectangle(min(chr.marker.pos[[i]])-block.buffer, max(chr.marker.pos[[i]])+block.buffer, i - 0.05, i + 0.05)
+            text(x = mean(chr.marker.pos[[i]]), y = i+0.1, labels = names(chr.marker.pos)[i])
+        }
+        segments(x0 = gene.pos, y0 = 1, y1 = length(chr.marker.pos)+0.05, col = "red")
+        axis(1); mtext("Chromosome Position", side = 1, line = 2.5)
+        mtext(paste("Position of", gene.name))
+    }
+
+    return(inblock)
+}
+
+
+fshr.block <- gene_block(data_obj, "Fshr", gene.info)
+
+#test.block <- gene_block(data_obj, "Igf1", gene.info)
 ```

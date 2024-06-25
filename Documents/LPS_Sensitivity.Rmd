@@ -648,4 +648,6 @@ for(i in 1:nrow(chr.pairs)){
     plot_chr_cor(chr.pairs[i,1],chr.pairs[i,2], genoprobs)
 }
 dev.off()
+
+
 ```
