@@ -427,7 +427,8 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 load_latest_cape(here("../../../git_repositories/cape"))
 
-data_obj <- linkage_blocks_network(data_obj, geno_obj, TRUE)
+data_obj <- linkage_blocks_network(data_obj, geno_obj, FALSE)
+data_obj <- get_network(data_obj, geno_obj)
 plot_network(data_obj)
 test <- write_variant_influences(data_obj, 0.05, include_main_effects = FALSE)
 
