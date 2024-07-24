@@ -21,7 +21,7 @@ results_dir <- args[1]
 
 library("here")
 if(is.na(results_dir)){
-    results_dir <- here("Results", "cape_heterosis17")
+    results_dir <- here("Results", "cape_2ET")
 }
 ```
 
@@ -382,43 +382,139 @@ colnames(rec_table)  <- c("Genotype_Value", "Genotype", "# Copies of Alternate A
 kable(rec_table)
 ```
 
-## Getting help
+## Clinical Effects
 
-Here we describe each output generically. For help interpreting specific 
-results, or generating specific plots, please email <anna.tyler@jax.org>.
+With so many interactions, it is useful to do some filtering. 
+Below we filter based on consisitency of clinical effects.
+
+For the runs with heterosis, we defined decreasing Temp PC1 
+and increasing the cytokines as harmful, and the reverse as 
+protective. Any interaction with mixed effects we called mixed. 
+The bar plot below shows the counts of each of these types of 
+interactions.
+
+For the all-additive run, we ended up defining harmful and
+protective only based on Temp PC1. Otherwise, all the effects
+were mixed. 
+
+```{r clin_effects}
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+
+load_latest_cape(here("../../../git_repositories/cape"))
+
+#clin.effects <- clinical.effects.int(data_obj, geno_obj, clinical.benefit = c("h", "*", rep("l", 4)))
+clin.effects <- clinical.effects.int(data_obj, geno_obj, clinical.benefit = c("h", rep("*", 5)))
+clin.summary <- clin.effects$clinical_summary
+m1.chr <- get_marker_chr(data_obj, sapply(strsplit(clin.summary[,1], "_"), function(x) x[1]))
+m2.chr <- get_marker_chr(data_obj, sapply(strsplit(clin.summary[,2], "_"), function(x) x[1]))
+full.table <- cbind(clin.summary[,1], m1.chr, clin.summary[,2], m2.chr, clin.summary[,3])
+colnames(full.table) <- c("Source", "Source_Chr", "Target", "Target_Chr", "Effect")
+write.table(full.table, file.path(results_dir, "Clinical_Summary.csv"), sep = ",", quote = FALSE, row.names = FALSE)
+
+barplot_with_num(table(full.table[,"Effect"]), main = "Clinical Effects of Interactions")
+
+#clin.details <- clin.effects$details
+#clin.details[[9]]
+```
+
+The Figure below shows a clinical view of the interactions. Each
+node is colored based on its chromosome. Chromosome 0 in this case
+is sex. The edges are colored based on the overall clinical effect. 
+Blue interactions are protective, and brown are harmful.
+
+There are multiple nodes per chromosome because these markers
+are all linked and have redundant effects. They don't all have
+identical effects, though, so it is easier to show all of them
+and group them by color.
+
+The Fshr locus, which is on Chr 17 is involved in protective
+interactions. The 1 state in the heterosis case is the B6/MOLF 
+heterozygote (otherwise it is MOLF homozygote).
+
+```{r clin_net, fig.width = 8, fig.height = 8}
+u_chr <- sort(as.numeric(unique(c(full.table[,"Source_Chr"], full.table[,"Target_Chr"]))))
+
+#display.brewer.all()
+chr.col <- c(brewer.pal(9, "Set1"), brewer.pal(12, "Set3"))
+names(chr.col) <- c(0:19, "X")
+
+all.marker <- c(full.table[,"Source"], full.table[,"Target"])
+all.chr <- c(full.table[,"Source_Chr"], full.table[,"Target_Chr"])
 
 
-```{r sandbox, eval = FALSE}
-marker1 <- "S6J121014671_B"; marker1.chr = 12
-marker2 <- "S2H173795248_B"; marker2.chr = 17
+u_marker <- sapply(strsplit(unique(all.marker), "_"), function(x) x[1])
+#marker_chr <- lapply(u_chr, function(x) all.marker[which(all.chr == x)]) #for mark.groups argument
+#names(marker_chr) <- u_chr
 
-pdf(paste0("~/Desktop/Chr", marker1.chr, "_Chr", marker2.chr, "_Interaction.pdf"), width = 12, height = 8)
 
-plot_effects(data_obj, geno_obj, marker1 = marker1, 
-    plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker1.chr)
+effect.col <- sapply(full.table[,"Effect"], function(x) switch(x, "harmful" = "brown", "beneficial" = "blue", "mixed" = "gray"))
 
-plot_effects(data_obj, geno_obj, marker1 = marker2, 
-    plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker2.chr)
-    
+test <- graph_from_edgelist(full.table[,c("Source", "Target")], directed = TRUE)
+marker_chr <- sapply(V(test)$name, function(x) all.chr[which(all.marker == x)[1]])
+marker_col <- sapply(marker_chr, function(x) chr.col[which(names(chr.col) == x)])
 
-plot_effects(data_obj, geno_obj, marker1 = marker1, marker2 = marker2, 
-    plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker1.chr,
-    marker2_label = marker2.chr)
+par(mar = c(0,0,0,0))
+plot(test, edge.color = effect.col, vertex.color = marker_col, vertex.label = marker_chr, vertex.size = 5,
+    edge.arrow.size = 0.5, vertex.label.cex = 0.5)
+#legend("topright", fill = chr.col[u_chr], legend = names(chr.col[as.character(u_chr)]), title = "Chromosome")
+legend("topright", lty = 1, col = c("blue", "brown"), legend = c("protective", "harmful"), lwd = 3)
+
+```
+
+We can pick out individual interactions from this list and look at their 
+effects. The plots below show the effects of a randomly selected harmful 
+interaction.
+
+Although the interaction itself is based on all the data, here we only
+show those animals that are homozygous for one genotype or the other
+assuming an additive model.
+
+```{r example_int_harm, fig.width = 8, fig.height = 6}
+example.type = "harmful"
+rnd.int <- sample(which(full.table[,"Effect"] == example.type), 1)
+#rnd.int = 10 #good example for heterosis17
+#rnd.int = 4 #good example for heterosis
+#rnd.int = 302 #good example for all additive
+
+marker1 <- full.table[rnd.int,"Source"]
+marker1.chr = data_obj$chromosome[which(data_obj$geno_names[[3]] == strsplit(marker1, "_")[[1]][1])]
+marker1.model = "Additive"
+
+marker2 <- full.table[rnd.int,"Target"]
+marker2.chr = data_obj$chromosome[which(data_obj$geno_names[[3]] == strsplit(marker2, "_")[[1]][1])]
+marker2.model = "Additive"
 
 plot_effects(data_obj, geno_obj, marker1 = marker1, marker2 = marker2, 
     plot_type = "b", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker1.chr,
+    gen_model1 = marker1.model, gen_model2 = "Additive", marker1_label = marker1.chr,
     marker2_label = marker2.chr)
+
+```
+
+The plots below show the effects of a randomly selected protective
+interaction.
+
+```{r example_int_ben, fig.width = 8, fig.height = 6}
+example.type = "beneficial"
+rnd.int <- sample(which(full.table[,"Effect"] == example.type), 1)
+#rnd.int <- 308 #good example for heterosis17
+#rnd.int <- 36 #good example for heterosis
+#rnd.int <- 1093 #good example for all additive
+
+marker1 <- full.table[rnd.int,"Source"]
+marker1.chr = data_obj$chromosome[which(data_obj$geno_names[[3]] == strsplit(marker1, "_")[[1]][1])]
+marker1.model = "Additive"
+
+marker2 <- full.table[rnd.int,"Target"]
+marker2.chr = data_obj$chromosome[which(data_obj$geno_names[[3]] == strsplit(marker2, "_")[[1]][1])]
+marker2.model = "Additive"
 
 plot_effects(data_obj, geno_obj, marker1 = marker1, marker2 = marker2, 
-    plot_type = "p", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Additive", gen_model2 = "Additive", marker1_label = marker1.chr,
+    plot_type = "b", error_bars = "se", pheno_type = "Normalized", 
+    gen_model1 = marker1.model, gen_model2 = marker2.model, marker1_label = marker1.chr,
     marker2_label = marker2.chr)
 
-dev.off()
 ```
 
 ```{r test, eval = FALSE}
@@ -427,13 +523,11 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 load_latest_cape(here("../../../git_repositories/cape"))
 
-data_obj <- linkage_blocks_network(data_obj, geno_obj, FALSE)
-data_obj <- get_network(data_obj, geno_obj)
-plot_network(data_obj)
+data_obj <- linkage_blocks_network(data_obj, geno_obj, TRUE)
+plot_full_network(data_obj)
 test <- write_variant_influences(data_obj, 0.05, include_main_effects = FALSE)
 
 gene.info <- read.delim(here("Data", "general", "mouse_gene_info.txt"))
-gene.name <- "Fshr"
 
 gene_block <- function(data_obj, gene.name, gene.info, plot.results = TRUE){
     gene.idx <- which(gene.info[,"external_gene_name"] == gene.name)
@@ -452,19 +546,21 @@ gene_block <- function(data_obj, gene.name, gene.info, plot.results = TRUE){
         chr.min <- min(unlist(chr.marker.pos))
         chr.max <- max(unlist(chr.marker.pos))
         block.buffer <- (chr.max - chr.min)*0.02
+        ymax <- length(chr.marker.pos)+1
         plot.new()
-        plot.window(xlim = c(chr.min, chr.max), ylim = c(1, (length(chr.marker.pos)+0.5)))
+        plot.window(xlim = c(chr.min, chr.max), ylim = c(1, ymax))
         for(i in 1:length(chr.marker.pos)){
             if(names(chr.marker.pos)[i] %in% inblock){
                 pt.col <- "red"
             }else{
                 pt.col = "black"
             }
-            points(chr.marker.pos[[i]], rep(i, length(chr.marker.pos[[i]])), pch = 16, col = pt.col)
-            draw.rectangle(min(chr.marker.pos[[i]])-block.buffer, max(chr.marker.pos[[i]])+block.buffer, i - 0.05, i + 0.05)
-            text(x = mean(chr.marker.pos[[i]]), y = i+0.1, labels = names(chr.marker.pos)[i])
+            pt.level = i
+            points(chr.marker.pos[[i]], rep(pt.level, length(chr.marker.pos[[i]])), pch = 16, col = pt.col)
+            draw.rectangle(min(chr.marker.pos[[i]])-block.buffer, max(chr.marker.pos[[i]])+block.buffer, pt.level - 0.05, pt.level + 0.05)
+            text(x = mean(chr.marker.pos[[i]]), y = pt.level+0.1, labels = names(chr.marker.pos)[i])
         }
-        segments(x0 = gene.pos, y0 = 1, y1 = length(chr.marker.pos)+0.05, col = "red")
+        segments(x0 = gene.pos, y0 = 1, y1 = ymax, col = "red")
         axis(1); mtext("Chromosome Position", side = 1, line = 2.5)
         mtext(paste("Position of", gene.name))
     }
@@ -473,7 +569,82 @@ gene_block <- function(data_obj, gene.name, gene.info, plot.results = TRUE){
 }
 
 
-fshr.block <- gene_block(data_obj, "Fshr", gene.info)
+fshr.block <- gene_block(data_obj, "Fshr", gene.info) #17_2 89.5Mb
+test.block <- gene_block(data_obj, "Zbp1", gene.info) #2_2 173Mb
 
 #test.block <- gene_block(data_obj, "Igf1", gene.info)
+#test.block <- gene_block(data_obj, "Lepr", gene.info)
+```
+
+```{r test_example, eval = FALSE}
+
+nearest_marker <- function(data_obj, gene.name, gene.info){
+    gene.idx <- which(gene.info[,"external_gene_name"] == gene.name)
+    if(length(gene.idx) == 0){stop(paste("Cannot find", gene.name))}
+    gene.chr <- gene.info[gene.idx, "chromosome_name"]
+    gene.pos <- gene.info[gene.idx, "start_position"]
+    chr.idx <- which(data_obj$chromosome == gene.chr)
+    chr.pos <- data_obj$marker_location[chr.idx]
+    nearest.idx <- get.nearest.pt(chr.pos, gene.pos)
+    nearest.marker <- data_obj$geno_names[[3]][chr.idx[nearest.idx]]
+    return(nearest.marker)
+}
+
+#marker1 <- "gUNC27787813_B"
+marker1 <- paste(nearest_marker(data_obj, "Zbp1", gene.info), "B", sep = "_")
+marker1.chr = data_obj$chromosome[which(data_obj$geno_names[[3]] == strsplit(marker1, "_")[[1]][1])]
+marker1.model = "Additive"
+
+#marker2 <- "gUNC3652253_B"
+marker2 <- paste(nearest_marker(data_obj, "Fshr", gene.info), "B", sep = "_")
+marker2.chr = data_obj$chromosome[which(data_obj$geno_names[[3]] == strsplit(marker2, "_")[[1]][1])]
+marker2.model = "Additive"
+
+plot_effects(data_obj, geno_obj, marker1 = marker1, marker2 = marker2, 
+    plot_type = "b", error_bars = "se", pheno_type = "Normalized", 
+    gen_model1 = marker1.model, gen_model2 = marker2.model, marker1_label = marker1.chr,
+    marker2_label = marker2.chr)
+
+```
+
+```{r full_plot, eval = FALSE}
+
+plot_allele_effects <- function(plot_data_obj, marker.name, plot.ind = c("females", "males", "all"),
+    plot_type = "p", ymin = NULL, ymax = NULL){
+    
+    has_covar <- as.logical(length(plot_data_obj$p_covar_table))
+    if(!has_covar){
+        sex.col <- plot_data_obj$pheno[,"sex"]
+        plot_data_obj$pheno <- plot_data_obj$pheno[,1:8]
+    }else{
+        sex.col <- plot_data_obj$p_covar_table[,which(data_obj$p_covar == "sex")]
+    }
+    if(plot.ind == "females"){
+        remove.ind <- which(sex.col == 1)
+    }
+    if(plot.ind == "males"){
+        remove.ind <- which(sex.col == 0)
+    }
+    if(plot.ind == "all"){
+        remove.ind = NULL
+    }
+
+    pared_obj <- suppressWarnings(remove_ind(plot_data_obj, remove.ind))
+
+    plot_effects(pared_obj, geno_obj, marker1 = marker.name, marker2 = NULL, 
+        plot_type = plot_type, error_bars = "se", pheno_type = "Raw", 
+        gen_model1 = marker1.model, ymin = ymin, ymax = ymax)
+
+}
+
+lps <- read_cross2(here("Data", "qtl2_files_mod", "qtl2_files", "lps.yaml"))
+lps_cape <- qtl2_to_cape(lps)
+raw_data_obj <- lps_cape$data_obj
+plot_allele_effects(raw_data_obj, marker1, plot.ind = "females", plot_type = "p", ymin = 25, ymax = 45) #look at X7h
+plot_allele_effects(raw_data_obj, marker1, plot.ind = "males", plot_type = "p", ymin = 25, ymax = 45) #look at X7h
+
+
+plot_allele_effects(data_obj, marker1, plot.ind = "females", plot_type = "p", ymin = -3, ymax = 3) #look at Temp PC1
+plot_allele_effects(data_obj, marker1, plot.ind = "all", plot_type = "p", ymin = -3, ymax = 3) #look at Temp PC1
+
 ```

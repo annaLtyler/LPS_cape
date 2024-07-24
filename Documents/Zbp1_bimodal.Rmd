@@ -1,0 +1,426 @@
+---
+title: "Zbp1 bimodal"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+params:
+    results_dir: here("tests", "testthat", "results")
+---
+
+
+## Introduction
+
+The purpose of this workflow is to look for potential genetic
+causes of a bimodal distribution in temperature at 7 hours
+post LPS injection in MOLF/B6 heterozygotes. It is possible that
+there is a second locus that is driving this split.
+
+```{r set_path}
+rm(list = ls())
+
+library(here)
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+
+all.packages <- c("pheatmap", "qtl2", "cluster")
+load_libraries(all.packages)
+
+load_latest_cape(here("../../../git_repositories/cape"))
+```
+
+```{r load_data}
+lps <- read_cross2(here("Data", "qtl2_files_mod", "qtl2_files", "lps.yaml"))
+lps_cape <- qtl2_to_cape(lps)
+data_obj <- lps_cape$data_obj
+geno_obj <- lps_cape$geno_obj
+
+gene.info <- read.delim(here("Data", "general", "mouse_gene_info.txt"))
+```
+
+```{r plot_allele_effect}
+plot_allele_effects <- function(plot_data_obj, marker.name, plot.ind = c("females", "males", "all"),
+    plot_type = "p", ymin = NULL, ymax = NULL){
+    
+    has_covar <- as.logical(length(plot_data_obj$p_covar_table))
+    if(!has_covar){
+        sex.col <- plot_data_obj$pheno[,"sex"]
+        plot_data_obj$pheno <- plot_data_obj$pheno[,1:8]
+    }else{
+        sex.col <- plot_data_obj$p_covar_table[,which(data_obj$p_covar == "sex")]
+    }
+    if(plot.ind == "females"){
+        remove.ind <- which(sex.col == 1)
+    }
+    if(plot.ind == "males"){
+        remove.ind <- which(sex.col == 0)
+    }
+    if(plot.ind == "all"){
+        remove.ind = NULL
+    }
+
+    pared_obj <- suppressWarnings(remove_ind(plot_data_obj, remove.ind))
+
+    plot_effects(pared_obj, geno_obj, marker1 = marker.name, marker2 = NULL, 
+        plot_type = plot_type, error_bars = "se", pheno_type = "Normalized", 
+        gen_model1 = "Additive", ymin = ymin, ymax = ymax)
+
+}
+
+nearest_marker <- function(data_obj, gene.name, gene.info){
+    gene.idx <- which(gene.info[,"external_gene_name"] == gene.name)
+    if(length(gene.idx) == 0){stop(paste("Cannot find", gene.name))}
+    gene.chr <- gene.info[gene.idx, "chromosome_name"]
+    gene.pos <- gene.info[gene.idx, "start_position"]
+    chr.idx <- which(data_obj$chromosome == gene.chr)
+    chr.pos <- data_obj$marker_location[chr.idx]
+    nearest.idx <- get.nearest.pt(chr.pos, gene.pos)
+    nearest.marker <- data_obj$geno_names[[3]][chr.idx[nearest.idx]]
+    return(nearest.marker)
+}
+
+```
+
+The following plot shows body temperature at each hour following LPS 
+injection for females. There is a bimodal distribution in hour 7.
+
+```{r female_split, fig.width = 10, fig.height = 6}
+
+zbp1.marker <- nearest_marker(data_obj, "Zbp1", gene.info)
+plot_allele_effects(data_obj, paste0(zbp1.marker, "_B"), 
+    plot.ind = "females", plot_type = "p", ymin = 25, ymax = 45) #look at X7h
+```
+
+There is no such split in the males
+
+```{r males, fig.width = 10, fig.height = 6}
+plot_allele_effects(data_obj, paste0(zbp1.marker, "_B"), 
+    plot.ind = "males", plot_type = "p", ymin = 25, ymax = 45) #look at X7h
+```
+
+We are interested in whether there is a genetic explanation for this.
+That is, is there a second locus that is interacting with the Zbp1
+locus to drive this split. 
+
+We are going to check this as simply as possible. Just to verify that
+we have the right data, the plot below shows the split again. It looks
+as if 34 degrees is a good place to split the hets.
+
+```{r subset}
+zbp1.geno <- round(geno_obj[,,which(data_obj$geno_names[[3]] == zbp1.marker)][,2]*100)/100
+
+f.idx <- which(data_obj$pheno[,"sex"] == 0)
+stripchart(data_obj$pheno[f.idx,"X7h"]~zbp1.geno[f.idx], vertical = TRUE, method = "jitter",
+    pch = 16, col = "#ef8a62", group.names = c("B6 hom", "het", "MOLF hom"), 
+    ylab = "Body Temperature")
+abline(h = 34, lty = 2, col = "gray", lwd = 3)
+
+
+het.idx <- which(zbp1.geno == 0.5)
+high.temp.idx <- which(data_obj$pheno[f.idx,"X7h"] > 34)
+low.temp.idx <- which(data_obj$pheno[f.idx,"X7h"] < 34)
+
+high.het <- intersect(het.idx, f.idx[high.temp.idx])
+low.het <- intersect(het.idx, f.idx[low.temp.idx])
+
+f.het <- intersect(het.idx, f.idx)
+het.pheno <- data_obj$pheno[f.het,"X7h",drop=FALSE]
+```
+
+The plot below verifies that we have pulled out the correct
+individuals
+
+```{r verify}
+boxplot(list("High Het" = data_obj$pheno[high.het,"X7h"], "Low Het" = data_obj$pheno[low.het,"X7h"]),
+    ylab = "Body Temperature")
+```
+
+## Overall Results
+
+The following plot shows the -log10(p values) for markers that 
+are correlated with the bimodal split. There is a marker on Chr 
+6 that seem pretty correlated.
+
+```{r extract_geno, fig.width = 10, fig.height = 4}
+#pull out the genotype cods for all markers
+test.geno <- round(geno_obj[f.het,2,]*100)/100
+tests <- apply(test.geno, 2, function(x) lm(het.pheno~x))
+test.pval <- sapply(tests, lm_p)
+
+plot_stats_on_chr(-log10(test.pval), data_obj$chromosome, mark.y = 3, 
+    y.label = "-log10(p value)")
+```
+
+## Effects of individual markers {.tabset .tabset-fade .tabset-pills}
+
+```{r pval_thresh}
+nlog.thresh = 3
+```
+
+The boxplots below show effects of markers on body temperature
+only in the female mice heterozygous for B6/MOLF at the Zbp1 locus.
+The break between the groups is marked by a horizontal line. The
+results below are for markers that had a -log10(p value) greater
+than `r nlog.thresh`.
+
+This result is a little disappointing, since there is still a 
+heterozygous split. The second locus together with the Zbp1 
+locus does not explain the heterozygous split.
+
+```{r find_max, results = "asis"}
+large.effect <- which(-log10(test.pval) > 3)
+
+for(i in 1:length(large.effect)){
+    effect.chr <- data_obj$chromosome[large.effect[i]]
+    effect.pos <- data_obj$marker_location[large.effect[i]]
+    cat("###", paste0("Chr", effect.chr, "; ", signif(effect.pos/1e6, 3), "Mb\n"))
+    boxplot(het.pheno~test.geno[,large.effect[i]], ylab = "Body Temperature",
+        xlab = paste0("Genotype at Chr", effect.chr, "; ", signif(effect.pos/1e6, 3), "Mb"))
+    stripchart(het.pheno~test.geno[,large.effect[i]], vertical = TRUE, add = TRUE, col = "#ef8a62",
+        pch = 16, method = "jitter")
+    abline(h = 34)
+    cat("\n\n")
+}
+
+#f.geno <- round(geno_obj[f.idx,2,]*100)/100
+#f.zbp1 <- f.geno[,zbp1.marker]
+#f.alt <- f.geno[,gsub(".value", "", names(large.effect), fixed = TRUE)]
+#stripchart(data_obj$pheno[f.idx,"X7h"]~f.zbp1*f.alt, vertical = TRUE, method = "jitter",
+#    pch = 16, col = "gray")
+```
+
+The marker with the largest effect is located in the gene Sox5.
+
+
+## Non-Mendelian Ratios
+
+It might also be valuable to look for interactions between the Zbp1
+locus and other loci based on Mendelian ratios. Are genotypic combinations
+at the Zpb1 locus prohibited by particular genotypes at other loci?
+
+```{r interacting_loci}
+
+#specify ind.idx to test only specific individuals, such 
+#as males or females
+test_two_ratios <- function(gene.name, ind.idx = NULL){
+
+    if(is.null(ind.idx)){ind.idx <- 1:nrow(geno_obj)}
+
+    gene.marker <- nearest_marker(data_obj, gene.name, gene.info)
+    gene.geno <- round(geno_obj[ind.idx,2,gene.marker]*100)/100
+
+    combo.geno.p <- rep(NA, dim(geno_obj)[3])
+    for(i in 1:dim(geno_obj)[3]){
+        test.marker <- round(geno_obj[ind.idx,2,i]*100)/100
+        comb.freq <- table(data.frame(cbind(gene.geno, test.marker)))
+        #pheatmap(comb.freq, cluster_rows = FALSE, cluster_cols = FALSE, display_numbers = TRUE)
+        test <- fisher.test(comb.freq)
+        combo.geno.p[i] <- test$p.value
+    }
+    return(combo.geno.p)
+}
+
+
+get_sig_markers <- function(marker.stats, thresh){
+    sig.idx <- which(marker.stats > thresh)
+    sig.chr <- data_obj$chromosome[sig.idx]
+    sig.pos <- data_obj$marker_location[sig.idx]
+    sig.markers <- dimnames(geno_obj)[[3]][sig.idx]
+    sig.table <- cbind(sig.idx,sig.markers, sig.chr, sig.pos)
+    return(sig.table)
+}
+
+plot_combo_geno <- function(gene.name, comp.marker){
+    gene.marker <- nearest_marker(data_obj, gene.name, gene.info)
+    gene.geno <- round(geno_obj[,2,gene.marker]*100)/100
+    comp.idx <- which(dimnames(geno_obj)[[3]] == comp.marker)
+    comp.geno <- round(geno_obj[,2,comp.idx]*100)/100
+    comb.freq <- table(data.frame(cbind(gene.geno, comp.geno)))
+    layout.mat <- matrix(c(2,0,1,3), ncol = 2, byrow = TRUE)
+    layout(layout.mat, widths = c(1, 0.4), heights = c(0.4, 1))
+    par(mar = c(6,4,0,0))
+    imageWithText(comb.freq, use.pheatmap.colors = TRUE, col.text.rotation = 0,
+        col.text.shift = 0.3, row.text.shift = 0.3, cex = 1)
+    par(mar = c(0,4,2,0))
+    barplot(colSums(comb.freq), names = NA, ylab = comp.marker)
+    par(mar = c(5,0,0,2))
+    barplot(rev(rowSums(comb.freq)), names = NA, horiz = TRUE, xlab = gene.name)
+}
+
+
+perm_combo <- function(gene.name, comp.marker, nperm = 100, ind.idx = NULL){
+    gene.marker <- nearest_marker(data_obj, gene.name, gene.info)
+    gene.geno <- round(geno_obj[,2,gene.marker]*100)/100
+    comp.idx <- which(dimnames(geno_obj)[[3]] == comp.marker)
+    comp.geno <- round(geno_obj[,2,comp.idx]*100)/100
+    comb.freq <- table(data.frame(cbind(gene.geno, comp.geno)))
+    
+    perm.freq <- vector(mode = "list", length = nperm)
+    for(p in 1:nperm){
+        test1 <- sample(gene.geno)
+        test2 <- sample(comp.geno)
+        perm.freq[[p]] <- table(data.frame(cbind(test1, test2)))
+    }
+
+    perm.avg <- Reduce("+", perm.freq)/nperm
+    
+    layout.mat <- matrix(c(2,4,1,3), ncol = 2, byrow = TRUE)
+    layout(layout.mat, widths = c(1, 0.4), heights = c(0.4, 1))
+    par(mar = c(6,4,0,0))
+    imageWithText(perm.avg, use.pheatmap.colors = TRUE, col.text.rotation = 0,
+        col.text.shift = 0.3, row.text.shift = 0.3, cex = 1)
+    par(mar = c(0,4,2,0))
+    barplot(colSums(perm.avg), names = NA, ylab = comp.marker)
+    par(mar = c(5,0,0,2))
+    barplot(rev(rowSums(perm.avg)), names = NA, horiz = TRUE, xlab = gene.name)
+    plot.text("Expectation if\nIndependent")
+}
+
+```
+
+The plot below shows the -log10(p values) for deviation from
+expected frequencies with the Zbp1 locus. The large peak is the
+Zbp1 locus itself. But there are some other small peaks, including
+one on Chr 17 that might be interesting. 
+
+Not shown are the stats for males and females separately.
+They did not have any significant loci outside of the 
+test marker region.
+
+```{r interacting_Zbp1, fig.width = 10, fig.height = 5}
+zbp1.inter <- test_two_ratios("Zbp1")
+
+plot_stats_on_chr(-log10(zbp1.inter), data_obj$chromosome, mark.y = 3, 
+    y.label = "-log10(p value)")
+
+#zbp1.inter.f <- test_two_ratios("Zbp1", f.idx)
+#plot_stats_on_chr(-log10(zbp1.inter.f), data_obj$chromosome, mark.y = 3, 
+#    y.label = "-log10(p value)")
+#mtext("Females", side = 3, outer = TRUE, line = -2.5)
+
+#m.idx <- which(data_obj$pheno[,"sex"] == 1)
+#zbp1.inter.m <- test_two_ratios("Zbp1", m.idx)
+#plot_stats_on_chr(-log10(zbp1.inter.m), data_obj$chromosome, mark.y = 3, y.label = "-log10(p value)")
+#mtext("Males", side = 3, outer = TRUE, line = -2.5)
+
+zbp1.sig <- get_sig_markers(marker.stats = -log10(zbp1.inter), thresh = 3)
+```
+
+The following plot shows the frequencies of pairwise
+genotypes for the marker nearest Zbp1 as well as a significant
+marker on Chromosome 3. The MOLF double homozygotes are more
+common than we would expect if the markers were assorting
+independently.
+
+```{r Zbp1_chr3, fig.width = 5, fig.height = 5}
+plot_combo_geno("Zbp1", "S6J032449077")
+```
+
+The following plot shows the frequencies expected
+if the loci were indepentent.
+
+```{r Zbp1_chr3_perm, fig.width = 5, fig.height = 5}
+perm_combo("Zbp1", "S6J032449077", nperm = 100)
+```
+
+The following plot shows the frequencies of pairwise
+genotypes for the marker nearest Zbp1 as well as a significant
+marker on Chromosome 17. This is not the Fshr locus. It is around
+27 Mb. Fshr is at 89 Mb. The MOLF double homozygotes are more
+common than we would expect if the markers were assorting
+independently.
+
+```{r Zbp1_chr17, fig.width = 5, fig.height = 5}
+plot_combo_geno("Zbp1", "gUNC27721077")
+```
+
+The following plot shows the frequencies expected
+if the loci were indepentent.
+
+```{r Zbp1_chr17_perm, fig.width = 5, fig.height = 5}
+perm_combo("Zbp1", "gUNC27721077", nperm = 100)
+```
+
+We can play the same game with the Fshr locus. The plot 
+below shows the -log10(p values) for the independence of
+markers with the marker nearest Fshr. The big peak shows 
+us where Fshr is. There are no other loci that look as if
+they are non-indepentendly assorting with the Fshr locus.
+
+Not shown are the stats for males and females seprately.
+There were no significant loci outside of the test marker
+locus.
+
+```{r interacting_Fshr, fig.width = 10, fig.height = 5}
+fshr.inter <- test_two_ratios("Fshr")
+
+plot_stats_on_chr(-log10(fshr.inter), data_obj$chromosome, mark.y = 3, 
+    y.label = "-log10(p value)")
+
+fshr.sig <- get_sig_markers(marker.stats = -log10(fshr.inter), thresh = 3)
+
+#fshr.inter.f <- test_two_ratios("Fshr", f.idx)
+#plot_stats_on_chr(-log10(fshr.inter.f), data_obj$chromosome, mark.y = 3, y.label = "-log10(p value)")
+
+#fshr.inter.m <- test_two_ratios("Fshr", m.idx)
+#plot_stats_on_chr(-log10(fshr.inter.m), data_obj$chromosome, mark.y = 3, y.label = "-log10(p value)")
+
+```
+
+### Full-genome scan
+
+Let's do a full genome scan for non-Mendelian ratios.
+For each marker on a chromosome we will test all markers
+on other chromosomes.
+
+```{r full_genome_non, eval = FALSE}
+
+test_chr_non_mendelian <- function(chr, ind.idx = NULL){
+   
+   if(is.null(ind.idx)){ind.idx <- 1:nrow(geno_obj)}
+
+    chr.idx <- which(data_obj$chromosome == chr)
+    not.chr.idx <- which(data_obj$chromosome != chr)
+    round.geno <- round(geno_obj[ind.idx,2,]*100)/100
+
+    combo.geno.p <- matrix(NA, nrow = length(chr.idx), ncol = length(not.chr.idx))
+    rownames(combo.geno.p) <- dimnames(geno_obj)[[3]][chr.idx]
+    colnames(combo.geno.p) <- dimnames(geno_obj)[[3]][not.chr.idx]
+    for(i in 1:length(chr.idx)){
+        report.progress(i, length(chr.idx))
+        for(j in 1:length(not.chr.idx)){
+            test1 <- round.geno[,chr.idx[i]]
+            test2 <- round.geno[,not.chr.idx[j]]
+            comb.freq <- table(data.frame(cbind(test1, test2)))
+            #pheatmap(comb.freq, cluster_rows = FALSE, cluster_cols = FALSE, display_numbers = TRUE)
+            test <- fisher.test(comb.freq)
+            combo.geno.p[i, j] <- test$p.value
+        }
+        #plot_stats_on_chr(-log10(combo.geno.p[i,]), data_obj$chromosome, mark.y = 3, y.label = "-log10(p value)")
+    }
+    return(combo.geno.p)
+}
+
+full.genome.combo <- vector(mode = "list", length = 19)
+names(full.genome.combo) <- 1:19
+for(ch in 1:19){
+    genome.combo.file <- here("Results", "non-mendelian", "genome", paste0("Chr", ch, ".RDS"))
+    if(!file.exists(genome.combo.file)){
+        test <- test_chr_non_mendelian(ch)
+        saveRDS(test, genome.combo.file)
+        cat("\n")
+    }else{
+        test <- readRDS(genome.combo.file)
+    }
+    full.genome.combo[[ch]] <- test
+}
+
+
+pheatmap(-log10(test), cluster_rows = FALSE, cluster_cols = FALSE, show_rownames = FALSE,
+        show_colnames = FALSE)
+
+```
