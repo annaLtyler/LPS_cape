@@ -1,0 +1,479 @@
+---
+title: "LPS Sensitivity"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+
+The purpose of this workflow is to look at Hardy-Weinberg 
+equilibrium and LD in the LPS mice. 
+
+We read the phenotype and genotype data from one of the cape
+results directories specified here.
+
+```{r setup, warning = FALSE, message = FALSE, error = FALSE}
+rm(list = ls())
+
+library(here)
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+
+all.packages <- c("pheatmap", "qtl2", "cluster")
+load_libraries(all.packages)
+
+results_dir <- here("Results", "cape_heterosis")
+```
+
+
+
+```{r load_data, message = FALSE, error = FALSE, warning = FALSE}
+lps <- read_cross2(here("Data", "qtl2_files_mod", "qtl2_files", "lps.yaml"))
+genoprobs <- calc_genoprob(lps)
+
+data_obj <- readRDS(file.path(results_dir, "cross.RDS"))
+geno_obj <- readRDS(file.path(results_dir, "cross_geno.RDS"))
+
+gene.info <- read.delim(here("Data", "general", "mouse_gene_info.txt"))
+```
+
+
+## Hardy-Weinberg and LD
+
+It looks as if there might be some deviations from Hardy-Weinberg
+equilibrium, particularly in the Fshr locus on Chr 17. There is also
+the possibility of long-range LD with this locus suggesting lethal 
+combinations of alleles. This section explores that possibility.
+
+```{r genoblocks, eval = FALSE}
+
+chr = 17; pos = 89292380 #Fshr position
+
+fshr_loc <- find_marker(lps$pmap, chr = chr, pos = pos)
+
+fshr_int <- pull_genoprobint(genoprobs, lps$pmap, chr = chr, int = c(pos-50e6, pos+50e6))
+fshr_geno <- apply(fshr_int[[1]], 3, function(x) apply(x, 1, function(y) y*c(0, 0.5, 1)))
+pheatmap(fshr_geno, cluster_cols = FALSE)
+
+pdf("~/Desktop/Fshr_loc.pdf", width = 15, height = 7)
+pheatmap(cor(fshr_geno), cluster_rows = FALSE, cluster_cols = FALSE)
+dev.off()
+
+pheatmap(fshr_int[[1]][,1,], cluster_cols = FALSE)
+pheatmap(fshr_int[[1]][,2,], cluster_cols = FALSE)
+pheatmap(fshr_int[[1]][,3,], cluster_cols = FALSE)
+```
+
+```{r ld_hw_fun}
+#test whether a given marker is in HW equilibrium
+#based on the ideal frequencies for an F2
+find_hw <- function(marker_geno){
+    #marker_prob <- apply(marker_geno, 1, function(x) mean(x*c(0, 0.5, 1)))
+    #hist(marker_prob)
+    #obs_pq <- colMeans(marker_geno)
+    #barplot(obs_pq)
+    #p_freq <- mean(apply(marker_geno, 1, function(x) sum(x[1] + x[2]/2)))
+    #q_freq <- mean(apply(marker_geno, 1, function(x) sum(x[3] + x[2]/2)))
+    p_freq = 0.5 #set all to 0.5 because this is an F2
+    q_freq <- 1-p_freq
+    hw_exp <- c(p_freq^2, 2*p_freq*q_freq, q_freq^2)*nrow(marker_geno)
+    obs <- colSums(marker_geno)
+    #barplot(hw_pq)
+    #hw.diff <- hw_pq - obs_pq
+    #barplot(rbind(hw_exp, obs), beside = TRUE)
+    #barplot(hw.diff)
+    #barplot(rbind(hw_pq, obs_pq, hw.diff), beside = TRUE)
+    chisq <- sum(sapply(1:length(hw_exp), function(x) (obs[x] - hw_exp[x])^2/hw_exp[x]))
+    #return(chisq.p)
+    return(chisq)
+}
+
+plot_hw <- function(marker_geno, marker_name, main = ""){
+    p_freq = 0.5 #set all to 0.5 because this is an F2
+    q_freq <- 1-p_freq
+    hw_exp <- c(p_freq^2, 2*p_freq*q_freq, q_freq^2)*nrow(marker_geno)
+    obs <- colSums(marker_geno)
+    chisq <- sum(sapply(1:length(hw_exp), function(x) (obs[x] - hw_exp[x])^2/hw_exp[x]))
+    chisq.p <- 1-pchisq(chisq, 1)
+    maxy <- max(c(hw_exp, obs))
+    freq.table <- rbind(hw_exp, obs)
+    rownames(freq.table) <- c("Expected", "Observed")
+    a <- barplot(rbind(hw_exp, obs), beside = TRUE, main = paste(main, "\np =", signif(chisq.p, 2)), 
+        col = c("#7fc97f", "#beaed4"), ylab = "Count", ylim = c(0, maxy*1.1))
+    text(a[1,], y = hw_exp+(maxy*0.025), labels = signif(hw_exp, 2))
+    text(a[2,], y = obs+(maxy*0.025), labels = signif(obs, 2))
+    legend("topleft", fill =  c("#7fc97f", "#beaed4"), legend = c("Expected", "Observed"))
+    result <- list("Frequencies" = freq.table, "p" = chisq.p, "adj.p" = adj.p)
+    invisible(result)
+}
+
+#find LD between two markers
+#The expected paired genotype frequencies are based
+#on the ideal for an F2
+find_D <- function(marker1_geno, marker2_geno){
+    #marker_prob <- apply(marker_geno, 1, function(x) mean(x*c(0, 0.5, 1)))
+    #hist(marker_prob)
+    #obs_pq <- colMeans(marker_geno)
+    #barplot(obs_pq)
+    #a_freq <- matrix(colMeans(marker1_geno), ncol = 1)
+    #b_freq <- matrix(colMeans(marker2_geno), nrow = 1)
+    a_freq <- matrix(c(0.25, 0.5, 0.25), ncol = 1)
+    b_freq <- matrix(c(0.25, 0.5, 0.25), nrow = 1)
+    exp_freq <- a_freq%*%b_freq*nrow(marker1_geno)
+    obs_freq <- t(marker1_geno)%*%marker2_geno
+    #exp_freq - obs_freq
+    test <- fisher.test(round(obs_freq))
+    return(test$p.value)
+}
+
+#plot expected and observed genotype frequencie for two markers
+#The expected is for the ideal frequencies from an F2.
+plot_LD_freq <- function(marker1, marker2, main = ""){
+    
+    obs_freq <- t(marker1)%*%marker2
+
+    a_freq <- matrix(c(0.25, 0.5, 0.25), ncol = 1)
+    b_freq <- matrix(c(0.25, 0.5, 0.25), nrow = 1)
+    exp_freq <- a_freq%*%b_freq*nrow(marker1)
+    geno_names <- apply(cbind(rep(c("BB", "BM", "MM"), each = 3), rep(c("BB", "BM", "MM"), 3)), 1, function(x) paste(x, collapse = "_"))
+
+    D.p <- find_D(marker1, marker2)
+
+    barplot(rbind(as.vector(exp_freq), as.vector(obs_freq)), beside = TRUE, ylim = c(0, 35),
+        names = geno_names, col = c("#7fc97f", "#beaed4"), main = paste(main, "\np =", signif(D.p, 2)))
+    legend("topright", fill =  c("#7fc97f", "#beaed4"), legend = c("Expected", "Observed"))
+}
+
+gene_hw <- function(gene.name){
+    gene.idx <- which(gene.info[,"external_gene_name"] == gene.name)
+    if(length(gene.idx) == 0){
+        return(paste(gene.name, "not found"))
+    }
+    gene.chr <- gene.info[gene.idx,"chromosome_name"]
+    gene.pos <- gene.info[gene.idx,"start_position"]
+
+    gene_loc <- find_marker(lps$pmap, chr = gene.chr, pos = gene.pos)
+    gene_geno <- pull_genoprobpos(genoprobs, lps$pmap, chr = gene.chr, pos = gene.pos)
+    gene_prob <- apply(gene_geno, 1, function(x) sum(x*c(0, 0.5, 1)))
+
+    
+    hw.stats <- plot_hw(gene_geno, gene_loc, main = paste(gene.name, "locus"))
+    hw.stats.f <- plot_hw(gene_geno[f.idx,], gene_loc, main = paste(gene.name, "locus; Females"))
+    hw.stats.m <- plot_hw(gene_geno[m.idx,], gene_loc, main = paste(gene.name, "locus; Males"))
+
+    result <- list("gene.name" = gene.name, "chromosome" = gene.chr, "Position" = gene.pos,
+        "nearest_marker" = gene_loc, "genotype" = gene_geno, "genotype_calls" = gene_prob,
+        "Frequencies" = hw.stats$Frequencies, "p" = hw.stats$p, adj.p = hw.stats$adj.p)
+    invisible(result)
+}
+
+
+adj_p <- function(hw_p, marker_name){
+    adj.p <- p.adjust(unlist(hw_p[1:19]), "fdr")
+    marker.adj.p <- adj.p[marker_name]
+    return(marker.adj.p)
+}
+```
+
+We then tested all markers for Hardy-Weinberg equilibrium compared
+to ideal F2 frequencies. It looks as if there might be some markers
+that are out of equilibrium, and it looks as if this effect is
+present particularly in the females.
+
+```{r hw_all, fig.height = 4, fig.width = 10}
+
+#test all markers for HW equilibrium
+hw_by_chr <- hw_p <- vector(mode = "list", length = length(genoprobs))
+names(hw_by_chr) <- names(genoprobs)
+for(ch in 1:(length(genoprobs)-1)){
+    hw_by_chr[[ch]] <- apply(genoprobs[[ch]], 3, function(x) find_hw(x[]))
+    hw_p[[ch]] <- sapply(hw_by_chr[[ch]], function(x) 1-pchisq(x, df = 1))
+    #pheatmap(t(hw_by_chr[[ch]]), cluster_cols = FALSE, cluster_rows = FALSE)
+}
+
+#also test HW for males and females separately. It seems that for 
+#some markers there might be a sex effect.
+sex.idx <- which(data_obj$p_covar == "sex")
+f.idx <- which(data_obj$p_covar_table[,sex.idx] == 0)
+m.idx <- which(data_obj$p_covar_table[,sex.idx] == 1)
+
+hw_by_chr <- hw_p <- hw_by_chr_f <- hw_f_p <- hw_by_chr_m <- hw_m_p <- vector(mode = "list", length = length(genoprobs))
+names(hw_by_chr) <- names(hw_by_chr_f) <- names(hw_by_chr_m) <- names(genoprobs)
+for(ch in 1:(length(genoprobs)-1)){
+
+    hw_by_chr[[ch]] <- apply(genoprobs[[ch]], 3, find_hw)
+    hw_p[[ch]] <- sapply(hw_by_chr[[ch]], function(x) 1-pchisq(x, df = 1))
+
+    hw_by_chr_f[[ch]] <- apply(genoprobs[[ch]], 3, function(x) find_hw(x[f.idx,]))
+    hw_f_p[[ch]] <- sapply(hw_by_chr_f[[ch]], function(x) 1-pchisq(x, df = 1))
+
+    hw_by_chr_m[[ch]] <- apply(genoprobs[[ch]], 3, function(x) find_hw(x[m.idx,]))
+    hw_m_p[[ch]] <- sapply(hw_by_chr_m[[ch]], function(x) 1-pchisq(x, df = 1))
+}
+
+
+par(mfrow = c(1,3))
+#hist(unlist(hw_p), main = "HW p value distribution across all markers", xlab = "p value")
+qqunif.plot(unlist(hw_p), plot.label = "QQ plot of HW p values")
+#hist(-log10(unlist(hw_p)), main = "Distribution of -log10(p values)",
+#    xlab = "-log10(p value)")
+qqunif.plot(unlist(hw_f_p), plot.label = "QQ plot of HW p values in Females")
+qqunif.plot(unlist(hw_m_p), plot.label = "QQ plot of HW p values in Males")
+```
+
+The bar plot below shows the number of significant loci
+overall, and in males and females. 
+
+
+```{r sig_hw, fig.height = 5, fig.width = 5}
+pval.thresh <- 0.05
+adj.p <- p.adjust(unlist(hw_p), "fdr")
+adj.p.f <- p.adjust(unlist(hw_f_p), "fdr")
+adj.p.m <- p.adjust(unlist(hw_m_p), "fdr")
+sig.idx <- which(adj.p <= pval.thresh)
+sig.idx.f <- which(adj.p.f <= pval.thresh)
+sig.idx.m <- which(adj.p.m <= pval.thresh)
+
+barplot_with_num(c("Overall" = length(sig.idx), 
+    "Females" = length(sig.idx.f), "Males" = length(sig.idx.m)))
+
+```
+
+### Non-equilibrium by location {.tabset .tabset-fade .tabset-pills}
+
+The plots below show where in the genome these significantly
+non-equilibrium markers are. 
+
+The spike on chr 4 for the females looks suspicious to me. 
+Could this be the result of genotyping errors? The spike is
+totally absent in the males, though, so maybe there is something
+biological going on.
+
+```{r hw_loc}
+
+plot_sig_hw <- function(hw_p_list, main = "", ymax = 5.5){
+    chr.mat <- matrix(1:21, nrow = 1)
+    layout(chr.mat)
+    for(ch in 1:19){
+        if(ch == 1){
+            par(mar = c(4,2,4,0))
+            plot.new()
+            plot.window(xlim = c(1, length(hw_p_list[[ch]])), ylim = c(0, ymax))
+            axis(2, line = -2.5)
+            mtext("-log10(p value)", side = 2, line = 0.5)
+        }else{
+            par(mar = c(4,0,4,0))
+        }
+        plot.new()
+        plot.window(xlim = c(1, length(hw_p_list[[ch]])), ylim = c(0, ymax))
+        if(ch %% 2 == 0){
+            draw.rectangle(0, length(hw_p_list[[ch]]), 0, ymax, fill = "gray", border = NA)
+        }
+        points(-log10(hw_p_list[[ch]]), type = "l")
+        mtext(paste("Chr", ch), side = 1, line = 1, cex = 0.7)
+    }
+    mtext(main, side = 3, line = -2.5, outer = TRUE)
+}
+```
+
+#### Overall HW
+```{r overal_hw, fig.width = 10, fig.height = 4}
+plot_sig_hw(hw_p, "Overall HW", ymax = 6)
+```
+
+#### Female HW
+```{r female_hw, fig.width = 10, fig.height = 4}
+plot_sig_hw(hw_f_p, "Female HW", ymax = 6)
+```
+
+#### Male HW
+```{r male_hw, fig.width = 10, fig.height = 4}
+plot_sig_hw(hw_m_p, "Male HW", ymax = 6)
+```
+
+### Frequencies for most significant {.tabset .tabset-fade .tabset-pills}
+
+Below we plot frequencies for the markers with the smallest
+p values. In each case there seems to be a depletion of B6/B6 
+genotypes. These markers are on Chr 2 between 172 and 174 Mb, 
+and Chr 4 between 53 and 58 Mb. 
+
+```{r ind_loci, fig.width = 10, fig.height = 4, results = "asis"}
+sig.overall <- lapply(hw_p, function(x) which(x <= 10e-5))
+sig.f <- lapply(hw_f_p, function(x) which(x <= 10e-5))
+
+all.sig <- lapply(1:length(sig.overall), function(x) union(sig.overall[[x]], sig.f[[x]]))
+
+sig.marker.info <- list()
+sig.counter <- 1
+for(ch in 1:length(all.sig)){
+    if(length(all.sig[[ch]]) > 0){
+        for(j in 1:length(all.sig[[ch]])){
+            par(mfrow = c(1,3))
+            marker.name = names(lps$pmap[[ch]])[all.sig[[ch]][j]]
+            marker.pos <- lps$pmap[[ch]][marker.name]
+            sig.marker.info[[sig.counter]] <- c(marker.name, ch, marker.pos)
+            sig.counter = sig.counter + 1
+            cat("#### Chr", ch, signif(marker.pos/1e6, 3), "Mb\n")
+            plot_hw(marker_geno = genoprobs[[ch]][,,marker.name], marker_name = marker.name,
+                main = paste0("Overall Chr", ch, ", ", signif(marker.pos/1e6, 3), "Mb"))
+            plot_hw(marker_geno = genoprobs[[ch]][f.idx,,marker.name], marker_name = marker.name,
+                main = paste0("Female Chr", ch, ", ", signif(marker.pos/1e6, 3), "Mb"))
+            plot_hw(marker_geno = genoprobs[[ch]][m.idx,,marker.name], marker_name = marker.name,
+                main = paste0("Male Chr", ch, ", ", signif(marker.pos/1e6, 3), "Mb"))
+            cat("\n\n")
+        }
+    }
+}
+
+sig.marker.table <- Reduce("rbind", sig.marker.info)
+colnames(sig.marker.table) <- c("marker.name", "chromosome", "position")
+```
+
+```{r hw_ld, eval = FALSE}
+u_chr <- unique(sig.marker.table[,"chromosome"])
+for(ch in 1:length(u_chr)){
+    chr.idx <- which(sig.marker.table[,"chromosome"] == u_chr[ch])
+    region.geno <- genoprobs[[as.numeric(u_chr[ch])]][,,sig.marker.table[chr.idx,1]]
+    geno.call <- sapply(1:dim(region.geno)[3], function(x) apply(region.geno[,,x], 1, function(y) sum(y*c(0, 0.5, 1))))
+    geno.cor <- cor(geno.call)
+    pheatmap(geno.cor, cluster_rows = FALSE, cluster_cols = FALSE)
+}
+```
+
+
+### Fshr Locus
+
+The following bar plot shows that the Fshr locus is not out 
+of Hardy-Weinberg equilibrium overall or for either of the 
+sexes.
+
+```{r hw, fig.width = 10, fig.height = 4}
+par(mfrow = c(1,3))
+fshr_result <- gene_hw("Fshr")
+```
+
+The following box plots show that we do see the sex-specific effect
+of the Fshr locus. There is heterosis in the females and no effect
+in the males.
+
+```{r fshr_test, fig.width = 8, fig.height = 4}
+
+par(mfrow = c(1,2))
+boxplot(data_obj$pheno[f.idx,"Temp_PC1"]*-1~as.factor(round(fshr_result$genotype_calls[f.idx]*2)/2), 
+    ylab = "Normalized Temp (AU)", xlab = "Genotype",  names = c("BB", "BM", "MM"),
+    main = "Females")
+boxplot(data_obj$pheno[m.idx,"Temp_PC1"]*1~as.factor(round(fshr_result$genotype_calls[m.idx]*2)/2),
+    ylab = "Normalized Temp (AU)", xlab = "Genotype",  names = c("BB", "BM", "MM"),
+    main = "Males")
+mtext("Effect of Fshr locus on response to LPS", outer = TRUE, line = -1.5)
+```
+
+
+
+We then looked for long range LD with the Fshr locus that might indicate 
+combinations of alleles that might be lethal. The qq plot for the p values 
+is below. The p values are deflated, suggesting there is no long-range
+LD.
+
+```{r ld_all, fig.width = 5, fig.height = 5}
+fshr_geno <- fshr_result$genotype
+LD.p  <- vector(mode = "list", length = length(genoprobs)-1)
+for(ch in 1:(length(genoprobs)-1)){
+   LD.p[[ch]] <- sapply(1:dim(genoprobs[[ch]])[3], function(x) find_D(fshr_geno, genoprobs[[ch]][,,x]))
+}
+
+#show p value distribution for markers not on the same chromosome as Fshr
+not.fshr <- setdiff(c(1:19), 17)
+qqunif.plot(unlist(LD.p[not.fshr]))
+```
+
+The plots below show pairwise genotypes for markers with the
+smallest p values. For the markers on Chr 19, there appears
+to be a slight enrichment for double heterozygotes and double
+MM homozygotes. The p values aren't great, though, so I'm not
+sure how far we'd want to take this.
+
+
+```{r, plot_ld, fig.width = 10, fig.height = 5}
+pthresh <- 10^-2
+long.range <- lapply(LD.p[not.fshr], function(x) which(x < pthresh))
+
+for(ch in 1:length(not.fshr)){
+    if(length(long.range[[ch]]) > 0){
+        for(j in 1:length(long.range[[ch]])){
+            marker.pos <- lps$pmap[[not.fshr[ch]]][j]
+            plot_LD_freq(fshr_geno, genoprobs[[not.fshr[ch]]][,,long.range[[ch]][j]],
+                main = paste0("Fshr locus and Chr", not.fshr[ch], ", ", 
+                signif(marker.pos/1e6, 3), "Mb"))
+        }
+    }
+}
+
+```
+
+```{r marker_cor, eval = FALSE}
+ind_genotype <- function(marker.geno){
+    ind.geno <- apply(marker.geno, 1, function(x) sum(x*c(0, 0.5, 1)))
+    return(ind.geno)
+}
+
+plot_chr_cor <- function(chr1, chr2, genoprobs){
+
+    chr1.idx <- which(names(genoprobs) == chr1)
+    chr2.idx <- which(names(genoprobs) == chr2)
+
+    chr1.genotypes <- apply(genoprobs[[chr1.idx]], 3, ind_genotype)
+    chr2.genotypes <- apply(genoprobs[[chr2.idx]], 3, ind_genotype)
+
+    chr2.names <- rep("", ncol(chr1.genotypes))
+    chr2.names[median(1:ncol(chr1.genotypes))]  <- paste("Chr", chr1)
+
+    chr4.names <- rep("", ncol(chr2.genotypes))
+    chr4.names[median(1:ncol(chr2.genotypes))]  <- paste("Chr", chr2)
+
+    colnames(chr1.genotypes) <- chr2.names
+    colnames(chr2.genotypes) <- chr4.names
+    geno.cor <- cor(cbind(chr1.genotypes, chr2.genotypes))
+    imageWithText(abs(geno.cor), use.pheatmap.colors = TRUE, show.text = FALSE, col.text.rotation = 0,
+        col.text.shift = 0.03, row.text.shift = 0.03, global.color.scale = TRUE, global.min = 0,
+        global.max = 1)
+    max.x <- ncol(geno.cor)
+    draw.rectangle(max.x - ncol(chr2.genotypes), max.x, 1, ncol(chr2.genotypes), lwd = 3)
+    draw.rectangle(1, ncol(chr1.genotypes), max.x - ncol(chr1.genotypes), max.x, lwd = 3)
+
+    add_color_bar(abs(geno.cor), "topright", use.pheatmap.colors = TRUE, x.min.shift = 0,
+        x.max.shift = -0.03, y.min.shift = 0.03, y.max.shift = 0.05, num.scale.pts = 5,
+        label.buffer = 0.015, global.color.scale = TRUE, global.min = 0,
+        global.max = 1)
+
+    invisible(geno.cor)
+}
+
+chr.pairs <- pair.matrix(names(genoprobs))
+
+pdf("~/Desktop/chr_ld.pdf")
+for(i in 1:nrow(chr.pairs)){
+    plot_chr_cor(chr.pairs[i,1],chr.pairs[i,2], genoprobs)
+}
+dev.off()
+
+
+```
+
+### Zbp1 Locus
+
+The following bar plot shows that the Zfbp1 locus does have
+some deviation from HW equilibrium, particularly in the females.
+
+```{r zbp1_hw, fig.width = 10, fig.height = 4}
+par(mfrow = c(1,3))
+Zbp1_result <- gene_hw("Zbp1")
+```
