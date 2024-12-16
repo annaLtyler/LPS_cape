@@ -28,6 +28,16 @@ all.packages <- c("pheatmap", "qtl2", "cluster")
 load_libraries(all.packages)
 
 load_latest_cape(here("../../../git_repositories/cape"))
+
+#decide if we want to code markers additively, use a heterosis
+#model in which AA and BB are 0 and AB is 1 across the whole
+#genome, or use a heterosis coding just on chromosome 17, where
+#we have observed heterosis previously
+
+#cape_type <- c("additive", "heterosis", "heterosis17")
+cape_type = "additive"; results_name = "cape_2ET_females"
+#cape_type = "heterosis"; results_name <- "cape_heterosis"
+#cape_type = "heterosis17"; results_name <- "cape_heterosis17"
 ```
 
 
@@ -71,6 +81,11 @@ geno_obj <- lps_cape$geno_obj
 
 gene.info <- read.delim(here("Data", "general", "mouse_gene_info.txt"))
 
+```
+
+```{r select_ind}
+male.idx <- which(data_obj$pheno[,"sex"] == 1)
+data_obj <- remove_ind(data_obj, male.idx)
 ```
 
 ## Body Temperature
@@ -224,10 +239,16 @@ plot(temp.pc[pc.order], type = "h", col = ordered_cl[pc.order], lwd = 3,
     main = "PC1 by cluster", ylab = "Temp PC1")
 abline(h = 0)
 legend("topleft", legend = paste("Cluster", 1:k), lty = 1, lwd = 3, col = 1:k)
-arrows(x0 = 50, x1 = 20, y0 = -0.25, lwd = 3)
-text(x = 50, y = -0.265, labels = "More LPS sensitive", adj = 1)
-arrows(x0 = 60, x1 = 90, y0 = -0.25, lwd = 3)
-text(x = 60, y = -0.265, labels = "More LPS resistant", adj = 0)
+plot.dim <- par("usr")
+plot.height = plot.dim[4] - plot.dim[3]
+plot.width <- plot.dim[2] - plot.dim[1]
+arrow.height <- (plot.dim[3]+(plot.height*0.05))
+text.height <- (plot.dim[3]+(plot.height*0.1))
+start.nudge <- plot.width*0.02
+arrows(x0 = (plot.dim[2]/2 - start.nudge), x1 = plot.dim[2]/4, y0 = arrow.height, lwd = 3)
+text(x = (plot.dim[2]/2 - start.nudge), y = text.height, labels = "More LPS sensitive", adj = 1)
+arrows(x0 = (plot.dim[2]/2 + start.nudge), x1 = plot.dim[2]*0.75, y0 = arrow.height, lwd = 3)
+text(x = (plot.dim[2]/2 + start.nudge), y = text.height, labels = "More LPS resistant", adj = 0)
 ```
 
 
@@ -317,69 +338,78 @@ for(ph in 1:ncol(full.pheno)){
 
 ## CAPE
 
-Now we run cape with the combined temperature PC1 and immune
-molecule matrix. Please see cape_results.html for results from
+Now we run cape with the combined temperature PC1 and cytokines. 
+Please see cape_results.html for results from
 cape.
 
-```{r cape, eval = FALSE}
-results_dir <- here("Results", "cape_2ET")
-final_obj <- run_cape(data_obj, geno_obj, 
-    param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
-    results_path = results_dir)
-```
+```{r cape_additive}
+#run cape with an additive coding for all markers
 
-```{r cape_heterosis, eval = FALSE}
-#run cape with a coding for heterosis.
-#AA and BB are 0 and A/B is 1
-code_heterosis <- function(marker_geno){
-    new.geno <- matrix(0, nrow = nrow(marker_geno), ncol = ncol(marker_geno))
-    dimnames(new.geno) <- dimnames(marker_geno)
-    which.hom <- union(which(marker_geno[,1] > 0.9), which(marker_geno[,2] > 0.9))
-    new.geno[which.hom,1] <- 1
-    which.het <- intersect(which(marker_geno[,1] < 0.6), which(marker_geno[,2] < 0.6))
-    new.geno[which.het,2] <- 1
-    return(new.geno)
+if(cape_type == "additive"){
+    results_dir <- here("Results", results_name)
+    final_obj <- run_cape(data_obj, geno_obj, 
+        param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
+        results_path = results_dir)
 }
-
-heterosis_markers <- lapply(1:dim(geno_obj)[3], function(x) code_heterosis(geno_obj[,,x]))
-heterosis_geno <- abind(heterosis_markers, along = 3)
-dimnames(heterosis_geno) <- dimnames(geno_obj)
-
-results_dir <- here("Results", "cape_heterosis")
-final_obj <- run_cape(data_obj, heterosis_geno, 
-    param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
-    results_path = results_dir)
-
 ```
 
-```{r cape_heterosis_chr17, eval = FALSE}
-#run cape with a coding for heterosis only on chromosome 17.
-#AA and BB are 0 and A/B is 1
-code_heterosis <- function(marker_geno, recode = TRUE){
-    if(!recode){
-        return(marker_geno)
+```{r cape_heterosis}
+
+if(cape_type == "heterosis"){
+    #run cape with a coding for heterosis.
+    #AA and BB are 0 and A/B is 1
+    code_heterosis <- function(marker_geno){
+        new.geno <- matrix(0, nrow = nrow(marker_geno), ncol = ncol(marker_geno))
+        dimnames(new.geno) <- dimnames(marker_geno)
+        which.hom <- union(which(marker_geno[,1] > 0.9), which(marker_geno[,2] > 0.9))
+        new.geno[which.hom,1] <- 1
+        which.het <- intersect(which(marker_geno[,1] < 0.6), which(marker_geno[,2] < 0.6))
+        new.geno[which.het,2] <- 1
+        return(new.geno)
     }
-    new.geno <- matrix(0, nrow = nrow(marker_geno), ncol = ncol(marker_geno))
-    dimnames(new.geno) <- dimnames(marker_geno)
-    which.hom <- union(which(marker_geno[,1] > 0.9), which(marker_geno[,2] > 0.9))
-    new.geno[which.hom,1] <- 1
-    which.het <- intersect(which(marker_geno[,1] < 0.6), which(marker_geno[,2] < 0.6))
-    new.geno[which.het,2] <- 1
-    return(new.geno)
+
+    heterosis_markers <- lapply(1:dim(geno_obj)[3], function(x) code_heterosis(geno_obj[,,x]))
+    heterosis_geno <- abind(heterosis_markers, along = 3)
+    dimnames(heterosis_geno) <- dimnames(geno_obj)
+
+    results_dir <- here("Results", results_name)
+    final_obj <- run_cape(data_obj, heterosis_geno, 
+        param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
+        results_path = results_dir)
 }
+```
 
-do.recode <- rep(FALSE, dim(geno_obj)[[3]])
-chr17.idx <- which(data_obj$chromosome == 17)
-do.recode[chr17.idx] <- TRUE
+```{r cape_heterosis_chr17}
 
-heterosis_markers <- lapply(1:dim(geno_obj)[3], function(x) code_heterosis(geno_obj[,,x], recode = do.recode[x]))
-heterosis_geno <- abind(heterosis_markers, along = 3)
-dimnames(heterosis_geno) <- dimnames(geno_obj)
+if(cape_type == "heterosis17"){
+    #run cape with a coding for heterosis only on chromosome 17.
+    #AA and BB are 0 and A/B is 1
+    code_heterosis <- function(marker_geno, recode = TRUE){
+        if(!recode){
+            return(marker_geno)
+        }
+        new.geno <- matrix(0, nrow = nrow(marker_geno), ncol = ncol(marker_geno))
+        dimnames(new.geno) <- dimnames(marker_geno)
+        which.hom <- union(which(marker_geno[,1] > 0.9), which(marker_geno[,2] > 0.9))
+        new.geno[which.hom,1] <- 1
+        which.het <- intersect(which(marker_geno[,1] < 0.6), which(marker_geno[,2] < 0.6))
+        new.geno[which.het,2] <- 1
+        return(new.geno)
+    }
 
-results_dir <- here("Results", "cape_heterosis17")
-final_obj <- run_cape(data_obj, heterosis_geno, 
-    param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
-    results_path = results_dir)
+    do.recode <- rep(FALSE, dim(geno_obj)[[3]])
+    chr17.idx <- which(data_obj$chromosome == 17)
+    do.recode[chr17.idx] <- TRUE
+
+    heterosis_markers <- lapply(1:dim(geno_obj)[3], function(x) code_heterosis(geno_obj[,,x], recode = do.recode[x]))
+    heterosis_geno <- abind(heterosis_markers, along = 3)
+    dimnames(heterosis_geno) <- dimnames(geno_obj)
+
+    results_dir <- here("Results", results_name)
+    final_obj <- run_cape(data_obj, heterosis_geno, 
+        param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
+        results_path = results_dir)
+}
 
 ```
 
@@ -675,7 +705,7 @@ sig.marker.table <- Reduce("rbind", sig.marker.info)
 colnames(sig.marker.table) <- c("marker.name", "chromosome", "position")
 ```
 
-```{r hw_ld eval = FALSE}
+```{r hw_ld, eval = FALSE}
 u_chr <- unique(sig.marker.table[,"chromosome"])
 for(ch in 1:length(u_chr)){
     chr.idx <- which(sig.marker.table[,"chromosome"] == u_chr[ch])

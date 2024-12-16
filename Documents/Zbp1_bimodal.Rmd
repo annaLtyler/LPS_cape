@@ -19,7 +19,7 @@ causes of a bimodal distribution in temperature at 7 hours
 post LPS injection in MOLF/B6 heterozygotes. It is possible that
 there is a second locus that is driving this split.
 
-```{r set_path}
+```{r set_path, message = FALSE, error = FALSE, warning = FALSE}
 rm(list = ls())
 
 library(here)
@@ -106,9 +106,24 @@ We are interested in whether there is a genetic explanation for this.
 That is, is there a second locus that is interacting with the Zbp1
 locus to drive this split. 
 
-We are going to check this as simply as possible. Just to verify that
-we have the right data, the plot below shows the split again. It looks
-as if 34 degrees is a good place to split the hets.
+We are going to check this as simply as possible with the following
+procedure:
+
+1) Isolate the individuals that have the bimodal split (female 
+    mice heterozygous for Zbp1).
+2) Treat the phenotype as high and low factors, and each marker
+    genotype as a factor with two or three levels depending on the
+    represented genotypes at that locus.
+3) Perform a Fisher exact test on the contingency table of the 
+    occurrence of each genotype with each phenotype. Markers
+    that deviate from the expected distribution.
+
+Markers that are correlated with this trait in these animals
+may be contributing to the observed phenotype.
+
+Below we pulled out the Zbp1 female heterozygotes. The plot
+shows the split again. It looks as if 34 degrees is a good 
+place to split the hets into high and low temperature animals.
 
 ```{r subset}
 zbp1.geno <- round(geno_obj[,,which(data_obj$geno_names[[3]] == zbp1.marker)][,2]*100)/100
@@ -132,7 +147,10 @@ het.pheno <- data_obj$pheno[f.het,"X7h",drop=FALSE]
 ```
 
 The plot below verifies that we have pulled out the correct
-individuals
+individuals. There are `r length(f.het)` individuals in the
+group overall. There are `r length(high.het)` animals in this
+group with a high temperature, and `r length(low.het)` animals
+in this group with a low temperature.
 
 ```{r verify}
 boxplot(list("High Het" = data_obj$pheno[high.het,"X7h"], "Low Het" = data_obj$pheno[low.het,"X7h"]),
@@ -142,24 +160,53 @@ boxplot(list("High Het" = data_obj$pheno[high.het,"X7h"], "Low Het" = data_obj$p
 ## Overall Results
 
 The following plot shows the -log10(p values) for markers that 
-are correlated with the bimodal split. There is a marker on Chr 
-6 that seem pretty correlated.
+have genotypes non-randomly distributed across the bimodal split. 
+The horizontal line shows the significance at p = 0.05. There are 
+quite a few peaks above the threshold.
 
 ```{r extract_geno, fig.width = 10, fig.height = 4}
 #pull out the genotype cods for all markers
 test.geno <- round(geno_obj[f.het,2,]*100)/100
-tests <- apply(test.geno, 2, function(x) lm(het.pheno~x))
-test.pval <- sapply(tests, lm_p)
+#tests <- apply(test.geno, 2, function(x) lm(het.pheno~x))
+#test.pval <- sapply(tests, lm_p)
 
-plot_stats_on_chr(-log10(test.pval), data_obj$chromosome, mark.y = 3, 
-    y.label = "-log10(p value)")
+#Fisher exact test
+het.factor <- het.pheno
+het.factor[which(het.pheno > 34)] <- "high"
+het.factor[which(het.pheno < 34)] <- "low"
+cont.tables <- apply(test.geno, 2, 
+    function(x) table(data.frame("pheno" = as.factor(het.factor), "geno" = as.factor(x))))
+tests <- lapply(cont.tables, function(x) if(ncol(x) > 1){fisher.test(x)}else{list("p.value" = NA)})
+names(tests) <- colnames(test.geno)
+test.pval <- sapply(tests, function(x) x$p.value)
+
+#permutations
+perm.file <- here("Results", "Zbp1_Fisher_perm.RDS")
+if(!file.exists(perm.file)){
+    nperm <- 100
+    pval.perm <- matrix(NA, nrow = nperm, ncol = length(tests))
+    colnames(pval.perm) <- names(tests)
+    for(p in 1:nperm){
+        print(p)
+        #randomize phenotype with respect to genoytpe
+        perm.tables <- apply(test.geno, 2, 
+            function(x) table(data.frame("pheno" = as.factor(het.factor), "geno" = as.factor(sample(x)))))
+        perm.tests <- lapply(perm.tables, function(x) if(ncol(x) > 1){fisher.test(x)}else{list("p.value" = NA)})
+        perm.p <- sapply(perm.tests, function(x) x$p.value)
+        pval.perm[p,] <- perm.p
+    }
+    saveRDS(pval.perm, perm.file)
+}else{
+    pval.perm <- readRDS(perm.file)
+}
+
+nlog.thresh <- get.percentile(unlist(-log10(pval.perm)), 95)
+
+plot_stats_on_chr(-log10(test.pval), data_obj$chromosome, 
+    mark.y = nlog.thresh, y.label = "-log10(p value)")
 ```
 
 ## Effects of individual markers {.tabset .tabset-fade .tabset-pills}
-
-```{r pval_thresh}
-nlog.thresh = 3
-```
 
 The boxplots below show effects of markers on body temperature
 only in the female mice heterozygous for B6/MOLF at the Zbp1 locus.
@@ -167,20 +214,30 @@ The break between the groups is marked by a horizontal line. The
 results below are for markers that had a -log10(p value) greater
 than `r nlog.thresh`.
 
-This result is a little disappointing, since there is still a 
-heterozygous split. The second locus together with the Zbp1 
-locus does not explain the heterozygous split.
+There are many results, so only the top marker from each chromosome 
+is shown.
+
 
 ```{r find_max, results = "asis"}
-large.effect <- which(-log10(test.pval) > 3)
+large.effect <- which(-log10(test.pval) > nlog.thresh)
+marker.idx <- match(names(large.effect), data_obj$geno_names$locus)
+large.effect.chr <- data_obj$chromosome[marker.idx]
+u_chr <- unique(large.effect.chr)
 
-for(i in 1:length(large.effect)){
-    effect.chr <- data_obj$chromosome[large.effect[i]]
-    effect.pos <- data_obj$marker_location[large.effect[i]]
-    cat("###", paste0("Chr", effect.chr, "; ", signif(effect.pos/1e6, 3), "Mb\n"))
-    boxplot(het.pheno~test.geno[,large.effect[i]], ylab = "Body Temperature",
-        xlab = paste0("Genotype at Chr", effect.chr, "; ", signif(effect.pos/1e6, 3), "Mb"))
-    stripchart(het.pheno~test.geno[,large.effect[i]], vertical = TRUE, add = TRUE, col = "#ef8a62",
+#kleep track of maximum markers
+max.chr <- vector(mode = "list", length = length(u_chr))
+names(max.chr) <- u_chr
+for(ch in 1:length(u_chr)){
+    effect.chr <- u_chr[ch]
+    max.effect <- which.max(-log10(test.pval[large.effect[which(large.effect.chr == effect.chr)]]))
+    effect.idx <- which(data_obj$geno_names$locus == names(max.effect))
+    names(effect.idx) <- names(max.effect)
+    max.chr[[ch]] <- effect.idx
+    max.loc <- data_obj$marker_location[effect.idx]
+    cat("###", paste0("Chr", effect.chr, "; ", signif(max.loc/1e6, 3), "Mb\n"))
+    boxplot(het.pheno~test.geno[,effect.idx], ylab = "Body Temperature",
+        xlab = paste0("Genotype at Chr", effect.chr, "; ", signif(max.loc/1e6, 3), "Mb"))
+    stripchart(het.pheno~test.geno[,effect.idx], vertical = TRUE, add = TRUE, col = "#ef8a62",
         pch = 16, method = "jitter")
     abline(h = 34)
     cat("\n\n")
@@ -193,7 +250,88 @@ for(i in 1:length(large.effect)){
 #    pch = 16, col = "gray")
 ```
 
-The marker with the largest effect is located in the gene Sox5.
+## LD blocks with significant effects {.tabset .tabset-fade .tabset-pills}
+
+The LD blocks for the chromosomes with significant markers on them
+are shown below. Colors indicate correlations between 0 (blue) and 
+1 (red). Correlations below 0 are shown in gray.
+
+Rough LD blocks are outlined based on medoid clustering of the 
+genotype correlation matrix. The positions of the significant
+markers are shown in blue, and the maximum marker is shown as a yellow
+asterisk.
+
+The x axis marks Mbp positions of the block boundaries as well as
+the maximum marker. The blocks are pretty big because there seems
+to be a fair bit of structure in the correlation matrix that makes
+it hard to cluster.
+
+The plot for Chr 10 looks a little funny because there were two 
+regions of significance. 
+
+
+```{r ld, results = "asis", fig.width = 7, fig.height = 6}
+#pdf("~/Desktop/ld_test.pdf", width = 6, height= 6)
+sig.blocks <- vector(mode = "list", length = length(u_chr))
+names(sig.blocks) <- u_chr
+for(ch in 1:length(u_chr)){
+    cat("### Chr", u_chr[ch], "\n")
+    chr.idx <- which(data_obj$chromosome == u_chr[ch])
+    has.var <- which(apply(test.geno[,chr.idx], 2, var) > 0)
+    geno.cor <- cor(test.geno[,chr.idx[has.var]])
+    
+    layout(matrix(c(1,2), nrow = 1), widths = c(1,0.2))
+    par(mar = c(4,4,4,0))
+    imageWithText(geno.cor, show.text = FALSE, 
+        use.pheatmap.colors = TRUE, row.name = NULL, col.names = NULL,
+        main = "", global.color.scale = TRUE, 
+        global.min = 0, global.max = 1)
+    max.idx <- which(colnames(test.geno)[chr.idx[has.var]] == names(max.chr[[ch]]))    
+
+    testk <- test.pam.k(geno.cor, 2:10, plot.results = FALSE)
+    cl.mean <- sapply(testk[[1]], mean)
+    best.k <- as.numeric(names(which.max(cl.mean)))
+
+    cl.geno <- pam(geno.cor, k = max(best.k, 4)) #use at least 4 clusters
+    cl.mem <- merge_overlapping_clusters(cl.geno$clustering)
+    u_cluster  <- unique(cl.mem)
+    #plot(cl.geno$clustering)
+    for(g in 1:length(u_cluster)){
+        cl.idx <- which(cl.mem == g)
+        draw.rectangle(min.x = min(cl.idx), max.x = max(cl.idx), 
+            min.y = nrow(geno.cor)-max(cl.idx), max.y = nrow(geno.cor) - min(cl.idx),
+            lwd = 3)
+    }
+
+    #show the significant markers in the LD plot
+    sig.effects <- which(-log10(test.pval[chr.idx]) > nlog.thresh)
+    sig.idx <- match(names(sig.effects), colnames(test.geno)[chr.idx])
+    points(sig.idx, length(chr.idx) - sig.idx, pch = 16, col = "#2b8cbe")
+    points(max.idx, length(chr.idx) - max.idx, pch = "*", cex = 2, col = "yellow")
+
+    plot.dim <- par("usr")
+    cl.idx <- lapply(u_cluster, function(x) which(cl.mem == x))
+    cl.min.idx <- sapply(cl.idx, min)-1 #shift by one to merge split points
+    cl.min.idx[which(cl.min.idx == 0)] <- 1
+    cl.max.idx <- sapply(cl.idx, max)
+    mark.at <- unique(sort(c(cl.min.idx, cl.max.idx, max.idx)))
+    mark.pos <- round(signif(data_obj$marker_location[chr.idx[mark.at]], 3)/1e6)
+    axis(1, at = mark.at, labels = mark.pos, las = 2)
+    mtext("Position (Mbp)", side = 1, line = 2.5)
+    best.pos <- round(signif(data_obj$marker_location[chr.idx[max.idx]], 3))/1e6
+    mtext(paste0("Chr", u_chr[ch], "; Max at ", best.pos, " Mbp"), side = 3, line = 2.5)
+
+    par(mar = c(15,2,6,3))
+    imageWithTextColorbar(geno.cor, use.pheatmap.colors = TRUE, axis.line = 0,
+        cex = 0.8, bar.lwd = 3, global.color.scale = TRUE, global.min = 0, 
+        global.max = 1)
+
+
+    cat("\n\n")
+}
+#dev.off()
+```
+
 
 
 ## Non-Mendelian Ratios
