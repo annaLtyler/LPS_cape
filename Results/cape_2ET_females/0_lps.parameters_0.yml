@@ -60,5 +60,5 @@ num_alleles_in_pairscan:
 max_pair_cor:
  - 0.5 
 pairscan_null_size:
- - 150000
+ - 1500000
 
