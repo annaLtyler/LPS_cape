@@ -53,12 +53,12 @@ peak_density:
 tolerance:
  - 5 
 num_alleles_in_pairscan:
- - 150
+ - 1500
 #================================================
 # Pairscan Parameters 
 #================================================
 max_pair_cor:
  - 0.5 
 pairscan_null_size:
- - 1500
+ - 150000
 
