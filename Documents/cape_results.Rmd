@@ -21,7 +21,7 @@ results_dir <- args[1]
 
 library("here")
 if(is.na(results_dir)){
-    results_dir <- here("Results", "cape_2ET")
+    results_dir <- here("Results", "cape_2ET_females")
 }
 ```
 
