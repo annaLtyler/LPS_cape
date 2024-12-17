@@ -35,9 +35,10 @@ load_latest_cape(here("../../../git_repositories/cape"))
 #we have observed heterosis previously
 
 #cape_type <- c("additive", "heterosis", "heterosis17")
-cape_type = "additive"; results_name = "cape_2ET_females"
+#cape_type = "additive"; results_name = "cape_2ET_females"
 #cape_type = "heterosis"; results_name <- "cape_heterosis"
 #cape_type = "heterosis17"; results_name <- "cape_heterosis17"
+cape_type = "heterosis17"; results_name = "cape_heterosis17_females"
 ```
 
 
