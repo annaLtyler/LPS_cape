@@ -50,7 +50,7 @@ alpha:
 marker_selection_method:
  - top_effects
 peak_density:
- - 0.5 
+ - 0.01
 tolerance:
  - 5 
 num_alleles_in_pairscan:
