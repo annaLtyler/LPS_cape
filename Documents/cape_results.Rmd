@@ -290,7 +290,7 @@ along the $x$-axis, and the other is plotted with different line styles.
 if(!all(is.na(var.inf))){
     plot_effects(data_obj, geno_obj, var.inf[1,"Source"], var.inf[1,"Target"], 
     plot_type = "l", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Dominant", gen_model2 = "Dominant")
+    gen_model1 = "Additive", gen_model2 = "Additive")
 }else{
     plot.text("No Interactions")
 }
@@ -308,7 +308,7 @@ Numbers over the bars indicate how many individuals are in each group.
 if(!all(is.na(var.inf))){
     plot_effects(data_obj, geno_obj, var.inf[1,"Source"], var.inf[1,"Target"],
     plot_type = "b", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Dominant", gen_model2 = "Dominant")
+    gen_model1 = "Additive", gen_model2 = "Additive")
 }else{
     plot.text("No Interactions")
 }
@@ -323,7 +323,7 @@ each group.
 if(!all(is.na(var.inf))){
     plot_effects(data_obj, geno_obj, var.inf[1,"Source"], var.inf[1,"Target"],
     plot_type = "p", error_bars = "se", pheno_type = "Normalized", 
-    gen_model1 = "Dominant", gen_model2 = "Dominant")
+    gen_model1 = "Additive", gen_model2 = "Additive")
 }else{
     plot.text("No Interactions")
 }
@@ -416,6 +416,23 @@ barplot_with_num(table(full.table[,"Effect"]), main = "Clinical Effects of Inter
 
 #clin.details <- clin.effects$details
 #clin.details[[9]]
+```
+
+```{r effect_dist, eval = FALSE}
+has.vals <- which(sapply(clin.effects$details, function(x) is.finite(as.numeric(x[1,"expected.additive"]))))
+all.exp <- lapply(has.vals, function(x) as.numeric(clin.effects$details[[x]][,"expected.additive"]))
+all.act <- lapply(has.vals, function(x) as.numeric(clin.effects$details[[x]][,"actual"]))
+all.diff <- lapply(1:length(all.exp), function(x) all.exp[x][[1]] - all.act[x][[1]])
+diff.mean <- sapply(all.diff, mean)
+mean.order <- order(diff.mean)
+boxplot(all.diff[mean.order])
+
+diff.mat <- Reduce("rbind", all.diff)
+colnames(diff.mat) <- colnames(data_obj$pheno)
+rownames(diff.mat) <- names(clin.effects$details)[has.vals]
+pdf("~/Desktop/ints.pdf", width = 7, height = 11)
+pheatmap(diff.mat)
+dev.off()
 ```
 
 The Figure below shows a clinical view of the interactions. Each
