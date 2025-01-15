@@ -38,8 +38,8 @@ load_latest_cape(here("../../../git_repositories/cape"))
 #cape_type = "additive"; results_name = "cape_2ET_females"
 #cape_type = "heterosis"; results_name <- "cape_heterosis"
 #cape_type = "heterosis17"; results_name <- "cape_heterosis17"
-#cape_type = "heterosis17"; results_name = "cape_heterosis17_females"
-cape_type = "heterosis"; results_name = "cape_heterosis_females"
+cape_type = "heterosis17"; results_name = "cape_heterosis17_males"
+#cape_type = "heterosis"; results_name = "cape_heterosis_females"
 ```
 
 
@@ -86,8 +86,9 @@ gene.info <- read.delim(here("Data", "general", "mouse_gene_info.txt"))
 ```
 
 ```{r select_ind}
-male.idx <- which(data_obj$pheno[,"sex"] == 1)
-data_obj <- remove_ind(data_obj, male.idx)
+#use this chunk to select individuals as asked by Sasha
+female.idx <- which(data_obj$pheno[,"sex"] == 0)
+data_obj <- remove_ind(data_obj, female.idx)
 ```
 
 ## Body Temperature
@@ -412,5 +413,64 @@ if(cape_type == "heterosis17"){
         param_file = file.path(results_dir, "0_lps.parameters_0.yml"),
         results_path = results_dir)
 }
+
+```
+
+```{r map_translation, eval = FALSE}
+#Rebecca is using the gmap and I'm using the pmap
+#This is just a little script to try to translate
+#between them
+
+translate_map <- function(chr = 17, mbp = NULL, cm = NULL){
+    if(!is.null(mbp)){
+        chr.idx <- which(names(lps$pmap) == chr)
+        nearest.marker <- get.nearest.pt(lps$pmap[[chr.idx]], mbp*1e6)
+        cm.pos <- lps$gmap[[chr.idx]][nearest.marker]
+        return(cm.pos)
+    }
+
+    if(!is.null(cm)){
+        chr.idx <- which(names(lps$gmap) == chr)
+        nearest.marker <- get.nearest.pt(lps$gmap[[chr.idx]], cm)
+        mbp.pos <- lps$pmap[[chr.idx]][nearest.marker]
+        return(mbp.pos)
+    }
+}
+
+
+translate_map(chr = 17, mbp = 27)
+translate_map(chr = 17, cm = 3.98)/1e6
+```
+
+
+```{r test_loci, eval = FALSE}
+data_obj <- readRDS("~/Documents/Projects/LPS/LPS_cape/Results/cape_2ET/cross.RDS")
+geno_obj <- readRDS("~/Documents/Projects/LPS/LPS_cape/Results/cape_2ET/cross_geno.RDS")
+
+get_nearest_marker <- function(data.obj, geno.obj, chr, pos){
+    chr.idx <- which(data.obj$chromosome == chr)
+    nearest.idx <- get.nearest.pt(data.obj$marker_location[chr.idx], pos)
+    nearest.marker <- data.obj$geno_names$locus[chr.idx[nearest.idx]]
+    marker.geno <- geno.obj[,,nearest.marker]
+    result <- list(nearest.marker, marker.geno)
+    return(result)
+}
+
+chr1 <- 17; bp1 <- 89.3*1e6; #Fshr
+chr2 <- 2; bp2 <- 17.3*1e6; #Zbp1
+
+marker1.data <- get_nearest_marker(data_obj, geno_obj, chr1, bp1)
+marker2.data <- get_nearest_marker(data_obj, geno_obj, chr2, bp2)
+
+marker1.geno <- round(marker1.data[[2]][,2], 2)
+marker2.geno <- round(marker2.data[[2]][,2], 2)
+
+marker1 <- paste0(marker1.data[[1]], "_B")
+marker2 <- paste0(marker2.data[[1]], "_B")
+
+interaction.plot(marker1.geno, marker2.geno, data_obj$pheno[,"Temp_PC1"])
+
+plot_effects(data_obj, geno_obj, marker1[[1]], marker2[[1]], pheno_type = "raw",
+    error_bars = "se")
 
 ```

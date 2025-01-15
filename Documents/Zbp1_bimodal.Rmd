@@ -250,6 +250,42 @@ for(ch in 1:length(u_chr)){
 #    pch = 16, col = "gray")
 ```
 
+## Interaction plots  {.tabset .tabset-fade .tabset-pills}
+
+We also looked more broadly to see if there were interactions across 
+all females (not just Zbp1 hets). The plots below show the interaction 
+plots for all females.
+
+```{r int_overall, fig.height = 5, fig.width = 10, results = "asis"}
+
+full.geno <- round(geno_obj[f.idx,2,]*100)/100
+full.pheno <- data_obj$pheno[f.idx,"X7h",drop=FALSE]
+
+
+#pdf("~/Desktop/zbp1.pdf", width = 10, height = 5)
+par(mfrow = c(1,2))
+for(ch in 1:length(u_chr)){
+    effect.chr <- u_chr[ch]
+    max.effect <- which.max(-log10(test.pval[large.effect[which(large.effect.chr == effect.chr)]]))
+    effect.idx <- which(data_obj$geno_names$locus == names(max.effect))
+    names(effect.idx) <- names(max.effect)
+    max.chr[[ch]] <- effect.idx
+    max.loc <- data_obj$marker_location[effect.idx]
+    marker.name <- paste0("Chr", effect.chr, "; ", signif(max.loc/1e6, 3), "Mb")
+    cat("###", marker.name, "\n")
+  
+    plot_points(full.pheno, zbp1.geno[f.idx], full.geno[,effect.idx], pheno_name = "Body Temperature",
+        marker1_label = "Zbp1", marker2_label = marker.name)
+
+    plot_lines(full.pheno, zbp1.geno[f.idx], full.geno[,effect.idx], pheno_name = "Body Temperature",
+        marker1_label = "Zbp1", marker2_label = marker.name, error_bars = "se")
+
+    abline(h = 34)
+    cat("\n\n")
+}
+#dev.off()
+```
+
 ## LD blocks with significant effects {.tabset .tabset-fade .tabset-pills}
 
 The LD blocks for the chromosomes with significant markers on them
@@ -332,7 +368,118 @@ for(ch in 1:length(u_chr)){
 #dev.off()
 ```
 
+## Third Locus?
 
+The chromosome 3 locus looks like an interesting candidate and contains
+the gene Mov10, which is predicted to be a helicase. Is it possible
+that a three-way interaction with another locus could better explain
+the bimodal distribution? Here we look for a combination of the Chr 3
+locus and another locus that has an effect on body temperature in the 
+Zbp1 het female mice.
+
+```{r three_way}
+
+ch = 2
+effect.chr <- u_chr[ch]
+max.effect <- which.max(-log10(test.pval[large.effect[which(large.effect.chr == effect.chr)]]))
+effect.idx <- which(data_obj$geno_names$locus == names(max.effect))
+names(effect.idx) <- names(max.effect)
+max.chr[[ch]] <- effect.idx
+max.loc <- data_obj$marker_location[effect.idx]
+marker.name <- paste0("Chr", effect.chr, "; ", signif(max.loc/1e6, 3), "Mb")
+marker.geno <- round(geno_obj[,2,effect.idx], 2)
+
+
+f.het.geno <- round(geno_obj[f.het,2,]*100)/100
+
+
+three_way_geno <- apply(f.het.geno, 2, function(x) marker.geno[f.het]*x)
+test.tables <- apply(three_way_geno, 2, function(x) table(data.frame("pheno" = as.factor(het.factor), "geno" = x)))
+#pheatmap(test.tables[[1]], cluster_rows = FALSE, cluster_cols = FALSE)
+test.three <- lapply(test.tables, fisher.test)
+three.p <- sapply(test.three, function(x) x$p.value)
+qqunif.plot(three.p)
+
+
+min(three.p)
+max.marker <- which.min(three.p)
+
+stripchart(het.pheno~as.factor(marker.geno[f.het])*as.factor(f.het.geno[,max.marker]), 
+    method = "jitter", vertical = TRUE, pch = 16)
+abline(h = 34)
+
+#boxplot(het.pheno~as.factor(marker.geno[f.het])*as.factor(f.het.geno[,max.marker]))
+
+# Try LDA
+library(MASS)
+
+all.geno <- round(geno_obj[,2,]*100)/100
+temp.factor <- as.factor(data_obj$pheno[,"X7h"] > 34)
+test.df <- data.frame(cbind("pheno" = temp.factor, "sex" = as.factor(data_obj$pheno[,"sex"]), all.geno))
+
+perm = 100
+acc <- rep(NA, perm)
+
+for(p in 1:perm){
+    print(p)
+    sample <- sample(c(TRUE, FALSE), nrow(all.geno), replace=TRUE, prob=c(0.7,0.3))
+    train <- test.df[sample,]
+    test <- test.df[!sample,]
+    model <- lda(pheno~., data = train)
+    predicted <- predict(model, test)
+    acc[p] <- mean(predicted$class==test$pheno)
+}
+hist(acc); abline(v = 0.5)
+
+pred.order <- order(predicted$x)
+plot(predicted$x[pred.order], col = as.numeric(temp.factor[!sample])[pred.order], pch = 16)
+
+pheatmap(predicted$posterior, cluster_cols = FALSE)
+
+pred.class <- apply(predicted$posterior, 1, which.max)
+pred.table <- data.frame("predicted" = as.factor(pred.class), "actual" = as.factor(test$pheno))
+conf.matrix <- table(pred.table)
+pheatmap(conf.matrix, cluster_rows = FALSE, cluster_cols = FALSE, display_numbers = TRUE)
+
+
+plot(t(model$means))
+which(model$means > 1, arr.ind = TRUE)
+
+
+
+#try random forest
+test.df <- data.frame(cbind("pheno" = data_obj$pheno[,"X7h"], "sex" = as.factor(data_obj$pheno[,"sex"]), all.geno)) #numeric
+library(randomForest)
+model <- randomForest(pheno ~ ., data = test.df, importance = TRUE)
+importance(model)
+
+
+#try LASSO
+library(glmnet)
+#test.df <- data.frame(cbind("pheno" = temp.factor, "sex" = as.factor(data_obj$pheno[,"sex"]), all.geno))# binary
+test.df <- data.frame(cbind("pheno" = data_obj$pheno[f.het,"X7h"], all.geno[f.het,]))# numeric
+test.df <- data.frame(cbind("pheno" = data_obj$pheno[f.het,"X7h"], all.geno[f.het,]))# numeric
+x <- model.matrix(pheno ~ ., test.df)[,-1]
+y <- test.df$pheno
+model <- cv.glmnet(x, y, alpha = 1)
+#model <- cv.glmnet(x, y, family = "binomial", alpha = 1)
+#coef(model, s = "lambda.min")
+
+plot(sort(coef(model), s = "lambda.min"))
+
+selected <- which(abs(round(coef(model, s = "lambda.min"), 2)) > 1)
+selected.markers <- colnames(test.df)[selected[2:length(selected)]]
+selected.idx <- match(selected.markers, data_obj$geno_name[[3]])
+selected.chr <- data_obj$chromosome[selected.idx]
+selected.pos <- data_obj$marker_location[selected.idx]
+coef <- round(coef(model, s = "lambda.min"), 2)
+cbind(selected[2:length(selected)], selected.chr, selected.pos, coef[selected[2:length(selected)]])
+
+selected.geno <- round(geno_obj[,2,selected.idx], 2)
+pheatmap(selected.geno, cluster_rows = FALSE, cluster_cols = FALSE)
+
+plot.decomp(selected.geno, cols = colors.from.values(test.df$pheno, use.pheatmap.colors = TRUE))
+```
 
 ## Non-Mendelian Ratios
 
