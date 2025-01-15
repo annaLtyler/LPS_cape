@@ -38,7 +38,8 @@ load_latest_cape(here("../../../git_repositories/cape"))
 #cape_type = "additive"; results_name = "cape_2ET_females"
 #cape_type = "heterosis"; results_name <- "cape_heterosis"
 #cape_type = "heterosis17"; results_name <- "cape_heterosis17"
-cape_type = "heterosis17"; results_name = "cape_heterosis17_males"
+cape_type = "heterosis17"; results_name <- "cape_heterosis17_temp"
+#cape_type = "heterosis17"; results_name = "cape_heterosis17_females"
 #cape_type = "heterosis"; results_name = "cape_heterosis_females"
 ```
 
@@ -85,7 +86,7 @@ gene.info <- read.delim(here("Data", "general", "mouse_gene_info.txt"))
 
 ```
 
-```{r select_ind}
+```{r select_ind, eval = FALSE}
 #use this chunk to select individuals as asked by Sasha
 female.idx <- which(data_obj$pheno[,"sex"] == 0)
 data_obj <- remove_ind(data_obj, female.idx)
