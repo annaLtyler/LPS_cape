@@ -1,0 +1,561 @@
+test[[2]]
+test[[3]]
+split.desc <- strsplit(var.table[,1], ";")
+split.desc
+csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])
+csq.sep
+int.csq <- which(csq.sep != "CSQ=-")
+int.csq
+gene.idx <- apply(var.table[int.csq,], 1, function(x) grep("ENSMUSG", x))
+gene.idx <- apply(var.table[int.csq,,drop=FALSE], 1, function(x) grep("ENSMUSG", x))
+gene.idx
+for(i in 1:nrow(var.table)){#
+		print(var.table[i,gene.idx[,1]])#
+	}
+transcript.idx <- apply(var.table[int.csq,,drop=FALSE], 1, function(x) grep("ENSMUST", x))
+transcript.idx
+for(i in 1:nrow(var.table)){#
+		print(var.table[i,transcript.idx[,1]])#
+	}
+transcript.idx
+for(i in 1:nrow(var.table)){#
+		print(var.table[i,transcript.idx[1,]])#
+	}
+transcript.idx
+gene.idx
+int.csq
+gene.idx <- grep("ENSMUSG", var.table[int.csq,])
+gene.idx
+gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])
+transcript.idx <- grep("ENSMUSt", var.table[int.csq[i],])
+transcript.idx
+gene.idx
+i = 1
+gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])
+gene.idx
+transcript.idx <- grep("ENSMUSt", var.table[int.csq[i],])
+transcript.idx
+transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])
+transcript.idx
+u_gene <- unique(var.table[int.csq[i],gene.idx])
+u_gene
+u_trans <- unique(var.table[int.csq[i],transcript.idx])
+u_trans
+var.table
+int.csq
+gene.id <- var.table[int.csq[i],gene.idx]
+trans.id <- var.table[int.csq[i],transcript.idx]
+all.csq <- var.table[int.csq[i],(transcript.idx+2)]
+all.csq
+csq.table <- cbind(gene.id, trans.id, all.csq)
+csq.table
+strain.csq <- vector(mode = "list", length = length(int.csq))
+strain.csq
+which(csq.sep != "CSQ=-")
+names(strain.csq) <- names(which(csq.sep != "CSQ=-"))
+var.table
+strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- names(which(csq.sep != "CSQ=-"))#
+	for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+		gene.id <- var.table[int.csq[i],gene.idx]#
+		trans.id <- var.table[int.csq[i],transcript.idx]#
+		all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+		csq.table <- cbind(gene.id, trans.id, all.csq)#
+		strain.csq[[i]] <- csq.table#
+	}
+strain.csq
+var.table
+int.csq
+csq.sep
+paste(names(int.csq), csq.sep[int.csq], sep = "_")
+strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")
+for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+		gene.id <- var.table[int.csq[i],gene.idx]#
+		trans.id <- var.table[int.csq[i],transcript.idx]#
+		all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+		csq.table <- cbind(gene.id, trans.id, all.csq)#
+		strain.csq[[i]] <- csq.table#
+	}
+strain.csq
+get_csq <- function(var.table){#
+	csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])#
+	int.csq <- which(csq.sep != "CSQ=-")#
+	strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")#
+	for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+		gene.id <- var.table[int.csq[i],gene.idx]#
+		trans.id <- var.table[int.csq[i],transcript.idx]#
+		all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+		csq.table <- cbind(gene.id, trans.id, all.csq)#
+		strain.csq[[i]] <- csq.table#
+	}#
+#
+	return(strain.csq)#
+}
+csq <- lapply(test, function(x) get_csq)
+csq
+csq <- lapply(test, get_csq)
+i = 1
+csq <- get_csq(test[[i]])
+i = i + 1#
+csq <- get_csq(test[[i]])
+i
+var.table = test[[i]]
+var.table
+get_csq <- function(var.table){#
+	csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])#
+	int.csq <- which(csq.sep != "CSQ=-")#
+	if(length(int.csq) == 0){#
+		return(NULL)#
+	}#
+	strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")#
+	for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+		gene.id <- var.table[int.csq[i],gene.idx]#
+		trans.id <- var.table[int.csq[i],transcript.idx]#
+		all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+		csq.table <- cbind(gene.id, trans.id, all.csq)#
+		strain.csq[[i]] <- csq.table#
+	}#
+#
+	return(strain.csq)#
+}
+csq <- lapply(var.table, get_csq)
+i = 1#
+i = i + 1#
+csq <- get_csq(var.table = test[[i]])
+i = i + 1#
+csq <- get_csq(var.table = test[[i]])
+i
+i = 18
+length(var.table)
+var.table = test[[i]]
+length(test)
+csq <- lapply(test, get_csq)
+csq
+info.table
+test
+has.vals <- which(sapply(csq, length) > 0)
+has.vals
+csq[has.vals]
+info.table
+info.table[,1]
+rownames(info.table)
+alt.table
+names(csq) <- rownames(alt.table)
+names(csq) <- rownames(alt.table[pos.var,])
+names(csq) <- rownames(alt.table)[pos.var]
+has.csq <- csq[has.vals]
+has.csq
+csq <- lapply(test, get_csq)
+csq
+length(csq)
+csq[[1]]
+csq[[2]]
+csq[[3]]
+csq[[4]]
+var.table <- test[[4]]
+var.table
+csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])
+int.csq <- which(csq.sep != "CSQ=-")
+if(length(int.csq) == 0){#
+		return(NULL)#
+	}
+csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])
+int.csq <- which(csq.sep != "CSQ=-")
+int.csq
+strain.csq <- vector(mode = "list", length = length(int.csq))
+names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")
+gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])
+transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])
+gene.idx
+transcript.idx
+intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")
+intergenic.idx
+i
+i = 1
+intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")
+intergenic.idx
+strain.csq[[i]]
+get_csq <- function(var.table){#
+	csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])#
+	int.csq <- which(csq.sep != "CSQ=-")#
+	if(length(int.csq) == 0){#
+		return(NULL)#
+	}#
+	strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")#
+	for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		if(length(gene.idx) > 0){#
+			transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+			gene.id <- var.table[int.csq[i],gene.idx]#
+			trans.id <- var.table[int.csq[i],transcript.idx]#
+			all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+			csq.table <- cbind(gene.id, trans.id, all.csq)#
+			strain.csq[[i]] <- csq.table#
+			}else{#
+				intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")#
+				if(length(intergenic.idx) > ){#
+					strain.csq[[i]] <- "intergenic_variant"#
+				}#
+	}#
+#
+	return(strain.csq)#
+}
+get_csq <- function(var.table){#
+	csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])#
+	int.csq <- which(csq.sep != "CSQ=-")#
+	if(length(int.csq) == 0){#
+		return(NULL)#
+	}#
+	strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")#
+	for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		if(length(gene.idx) > 0){#
+			transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+			gene.id <- var.table[int.csq[i],gene.idx]#
+			trans.id <- var.table[int.csq[i],transcript.idx]#
+			all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+			csq.table <- cbind(gene.id, trans.id, all.csq)#
+			strain.csq[[i]] <- csq.table#
+			}else{#
+				intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")#
+				if(length(intergenic.idx) > ){#
+					strain.csq[[i]] <- "intergenic_variant"#
+					}#
+			}#
+		}#
+#
+	return(strain.csq)#
+}
+csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])#
+	int.csq <- which(csq.sep != "CSQ=-")#
+	if(length(int.csq) == 0){#
+		return(NULL)#
+	}
+strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")
+for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		if(length(gene.idx) > 0){#
+			transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+			gene.id <- var.table[int.csq[i],gene.idx]#
+			trans.id <- var.table[int.csq[i],transcript.idx]#
+			all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+			csq.table <- cbind(gene.id, trans.id, all.csq)#
+			strain.csq[[i]] <- csq.table#
+			}else{#
+				intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")#
+				if(length(intergenic.idx) > ){#
+					strain.csq[[i]] <- "intergenic_variant"#
+					}#
+			}#
+		}
+intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")
+get_csq <- function(var.table){#
+	csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])#
+	int.csq <- which(csq.sep != "CSQ=-")#
+	if(length(int.csq) == 0){#
+		return(NULL)#
+	}#
+	strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")#
+	for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		if(length(gene.idx) > 0){#
+			transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+			gene.id <- var.table[int.csq[i],gene.idx]#
+			trans.id <- var.table[int.csq[i],transcript.idx]#
+			all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+			csq.table <- cbind(gene.id, trans.id, all.csq)#
+			strain.csq[[i]] <- csq.table#
+			}else{#
+				intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")#
+				if(length(intergenic.idx) > 0){#
+					strain.csq[[i]] <- "intergenic_variant"#
+					}#
+			}#
+		}#
+#
+	return(strain.csq)#
+}
+test <- apply(info.table, 1, make_info_table)
+csq <- lapply(test, get_csq)
+names(csq) <- rownames(alt.table)[pos.var]
+csq
+has.vals <- which(sapply(csq, length) > 0)
+has.csq <- csq[has.vals]
+has.csq
+gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])
+gene.idx
+var.table <- test[[1]]
+csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])
+int.csq <- which(csq.sep != "CSQ=-")
+if(length(int.csq) == 0){#
+		return(NULL)#
+	}
+strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")
+i = 1
+gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])
+gene.idx
+transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])
+gene.id <- var.table[int.csq[i],gene.idx]
+gene.id
+gene.name <- gconvert(unique(gene.id), organism = "mmusculus")
+library(gprofiler2)
+gene.name <- gconvert(unique(gene.id), organism = "mmusculus")
+gene.name
+gene.name <- gconvert(unique(gene.id), organism = "mmusculus")[,"name"]
+gene.name
+gconvert(gene.id, organism = "mmusculus")
+gene.name <- gconvert(gene.id, organism = "mmusculus")[,"name"]
+csq.table <- cbind(gene.id, gene.name, trans.id, all.csq)
+csq.table
+get_csq <- function(var.table){#
+	csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])#
+	int.csq <- which(csq.sep != "CSQ=-")#
+	if(length(int.csq) == 0){#
+		return(NULL)#
+	}#
+	strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")#
+	for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		if(length(gene.idx) > 0){#
+			transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+			gene.id <- var.table[int.csq[i],gene.idx]#
+			gene.name <- gconvert(gene.id, organism = "mmusculus")[,"name"]#
+			trans.id <- var.table[int.csq[i],transcript.idx]#
+			all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+			csq.table <- cbind(gene.id, gene.name, trans.id, all.csq)#
+			strain.csq[[i]] <- csq.table#
+			}else{#
+				intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")#
+				if(length(intergenic.idx) > 0){#
+					strain.csq[[i]] <- "intergenic_variant"#
+					}#
+			}#
+		}#
+#
+	return(strain.csq)#
+}
+test <- apply(info.table, 1, make_info_table)
+csq <- lapply(test, get_csq)
+names(csq) <- rownames(alt.table)[pos.var]
+csq
+strain.csq
+lapply(1:length(strain.csq), function(x) rep(names(strain.csq)[x], nrow(strain.csq[[x]])))
+csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])#
+	int.csq <- which(csq.sep != "CSQ=-")#
+	if(length(int.csq) == 0){#
+		return(NULL)#
+	}
+strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")
+for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		if(length(gene.idx) > 0){#
+			transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+			gene.id <- var.table[int.csq[i],gene.idx]#
+			gene.name <- gconvert(gene.id, organism = "mmusculus")[,"name"]#
+			trans.id <- var.table[int.csq[i],transcript.idx]#
+			all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+			csq.table <- cbind(gene.id, gene.name, trans.id, all.csq)#
+			strain.csq[[i]] <- csq.table#
+			}else{#
+				intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")#
+				if(length(intergenic.idx) > 0){#
+					strain.csq[[i]] <- "intergenic_variant"#
+					}#
+			}#
+		}
+lapply(1:length(strain.csq), function(x) rep(names(strain.csq)[x], nrow(strain.csq[[x]])))
+strain.col <- lapply(1:length(strain.csq), function(x) rep(names(strain.csq)[x], nrow(strain.csq[[x]])))
+strain.csq
+var.table <- test[[4]]
+var.table
+csq.sep <- sapply(strsplit(var.table[,1], ";"), function(x) x[4])#
+	int.csq <- which(csq.sep != "CSQ=-")#
+	if(length(int.csq) == 0){#
+		return(NULL)#
+	}#
+	strain.csq <- vector(mode = "list", length = length(int.csq))#
+	names(strain.csq) <- paste(names(int.csq), csq.sep[int.csq], sep = "_")#
+	for(i in 1:length(int.csq)){#
+		gene.idx <- grep("ENSMUSG", var.table[int.csq[i],])#
+		if(length(gene.idx) > 0){#
+			transcript.idx <- grep("ENSMUST", var.table[int.csq[i],])#
+			gene.id <- var.table[int.csq[i],gene.idx]#
+			gene.name <- gconvert(gene.id, organism = "mmusculus")[,"name"]#
+			trans.id <- var.table[int.csq[i],transcript.idx]#
+			all.csq <- var.table[int.csq[i],(transcript.idx+2)]#
+			csq.table <- cbind(gene.id, gene.name, trans.id, all.csq)#
+			strain.csq[[i]] <- csq.table#
+			}else{#
+				intergenic.idx <- which(var.table[int.csq[i],] == "intergenic_variant")#
+				if(length(intergenic.idx) > 0){#
+					strain.csq[[i]] <- "intergenic_variant"#
+					}#
+			}#
+		}
+strain.csq
+strain.col <- lapply(1:length(strain.csq), function(x) rep(names(strain.csq)[x], nrow(strain.csq[[x]])))
+length(csq)
+i = 1
+has.csq[[i]]
+length(has.csq[[i]])
+names(has.csq[[i]])
+has.csq[[2]]
+has.csq[[3]]
+has.csq[[4]]
+cat(has.csq[[i]][[j]], "\n")
+j =1
+cat(has.csq[[i]][[j]], "\n")
+has.csq[[i]][[j]]
+cat(has.csq[[i]][[j]], sep = "\t")
+info.name <- here("Results", "VCF", "Variant_Info.tsv")#
+sink(info.name)#
+for(i in 1:length(has.csq)){#
+	for(j in 1:length(has.csq[[i]])){#
+		cat(names(has.csq[[i]])[j], "\n")#
+		cat(has.csq[[i]][[j]], sep = "\t")#
+		cat("\n\n")#
+	}#
+}#
+sink()
+has.csq
+cat(names(has.csq)[i], "\n")
+cat("Position:", names(has.csq)[i], "\n")
+info.name <- here("Results", "VCF", "Variant_Info.tsv")#
+sink(info.name)#
+for(i in 1:length(has.csq)){#
+	cat("Position:", names(has.csq)[i], "\n")#
+	for(j in 1:length(has.csq[[i]])){#
+		cat(names(has.csq[[i]])[j], "\n")#
+		cat(has.csq[[i]][[j]], sep = "\t")#
+		cat("\n\n")#
+	}#
+}#
+sink()
+cat(has.csq[[i]][[j]], sep = "\n")
+info.name <- here("Results", "VCF", "Variant_Info.tsv")#
+sink(info.name)#
+for(i in 1:length(has.csq)){#
+	cat("Position:", names(has.csq)[i], "\n")#
+	for(j in 1:length(has.csq[[i]])){#
+		cat(names(has.csq[[i]])[j], "\n")#
+		cat(has.csq[[i]][[j]], sep = "\n")#
+		cat("\n\n")#
+	}#
+}#
+sink()
+has.csq
+test <- apply(info.table, 1, make_info_table)#
+csq <- lapply(test, get_csq)#
+names(csq) <- rownames(alt.table)[pos.var]
+has.vals <- which(sapply(csq, length) > 0)#
+has.csq <- csq[has.vals]
+info.name <- here("Results", "VCF", "Variant_Info.tsv")#
+sink(info.name)#
+for(i in 1:length(has.csq)){#
+	cat("Position:", names(has.csq)[i], "\n")#
+	for(j in 1:length(has.csq[[i]])){#
+		cat(names(has.csq[[i]])[j], "\n")#
+		cat(has.csq[[i]][[j]], sep = "\t")#
+		cat("\n\n")#
+	}#
+}#
+sink()
+cat(has.csq[[i]][[j]], sep = "\t")
+cat(has.csq[[i]][[j]])
+i = 4
+cat(names(has.csq[[i]])[j], "\n")
+cat(has.csq[[i]][[j]])
+i = 1
+cat(names(has.csq[[i]])[j], "\n")
+cat(has.csq[[i]][[j]])
+i
+j = 1
+cat(names(has.csq[[i]])[j], "\n")
+cat(has.csq[[i]][[j]])
+has.csq[[i]][[j]]
+?cat
+cat(has.csq[[i]][[j]], sep = "\n")
+cat(has.csq[[i]][[j]])
+cat(has.csq[[i]][[j]], "\n")
+apply(has.csq[[i]][[j]], 1, function(x) cat(x, "\n"))
+info.name <- here("Results", "VCF", "Variant_Info.tsv")#
+sink(info.name)#
+for(i in 1:length(has.csq)){#
+	cat("Position:", names(has.csq)[i], "\n")#
+	for(j in 1:length(has.csq[[i]])){#
+		cat(names(has.csq[[i]])[j], "\n")#
+		apply(has.csq[[i]][[j]], 1, function(x) cat(x, "\n"))#
+		cat("\n\n")#
+	}#
+}#
+sink()
+i
+j
+has.csq[[i]]
+class(has.csq[[i]][[j]])
+info.name <- here("Results", "VCF", "Variant_Info.tsv")#
+sink(info.name)#
+for(i in 1:length(has.csq)){#
+	cat("Position:", names(has.csq)[i], "\n")#
+	for(j in 1:length(has.csq[[i]])){#
+		cat(names(has.csq[[i]])[j], "\n")#
+		if(class(has.csq[[i]][[j]]) == "character"){#
+				cat(has.csq[[i]][[j]], "\n")#
+			}else{#
+				apply(has.csq[[i]][[j]], 1, function(x) cat(x, "\n"))#
+			}#
+		cat("\n\n")#
+	}#
+}#
+sink()
+i
+has.csq[[i]][[j]]
+class(has.csq[[i]][[j]])
+info.name <- here("Results", "VCF", "Variant_Info.tsv")#
+sink(info.name)#
+for(i in 1:length(has.csq)){#
+	cat("Position:", names(has.csq)[i], "\n")#
+	for(j in 1:length(has.csq[[i]])){#
+		cat(names(has.csq[[i]])[j], "\n")#
+		if(class(has.csq[[i]][[j]])[1] == "character"){#
+				cat(has.csq[[i]][[j]], "\n")#
+			}else{#
+				apply(has.csq[[i]][[j]], 1, function(x) cat(x, "\n"))#
+			}#
+		cat("\n\n")#
+	}#
+}#
+sink()
+info.name <- here("Results", "VCF", "Variant_Info.tsv")#
+sink(info.name)#
+for(i in 1:length(has.csq)){#
+	cat("Position:", names(has.csq)[i], "\n")#
+	for(j in 1:length(has.csq[[i]])){#
+		cat(names(has.csq[[i]])[j], "\n")#
+		if(class(has.csq[[i]][[j]])[1] == "character"){#
+				cat(has.csq[[i]][[j]], "\n")#
+			}else{#
+				apply(has.csq[[i]][[j]], 1, function(x) cat(x, "\n"))#
+			}#
+	}#
+	cat("\n\n")#
+}#
+sink()

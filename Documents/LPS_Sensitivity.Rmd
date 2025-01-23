@@ -24,7 +24,7 @@ library(here)
 all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
 for(i in 1:length(all.fun)){source(all.fun[i])}
 
-all.packages <- c("pheatmap", "qtl2", "cluster")
+all.packages <- c("pheatmap", "qtl2", "cluster", "DT")
 load_libraries(all.packages)
 
 load_latest_cape(here("../../../git_repositories/cape"))
@@ -37,8 +37,8 @@ load_latest_cape(here("../../../git_repositories/cape"))
 #cape_type <- c("additive", "heterosis", "heterosis17")
 #cape_type = "additive"; results_name = "cape_2ET_females"
 #cape_type = "heterosis"; results_name <- "cape_heterosis"
-#cape_type = "heterosis17"; results_name <- "cape_heterosis17"
-cape_type = "heterosis17"; results_name <- "cape_heterosis17_temp"
+cape_type = "heterosis17"; results_name <- "cape_heterosis17"
+#cape_type = "heterosis17"; results_name <- "cape_heterosis17_temp"
 #cape_type = "heterosis17"; results_name = "cape_heterosis17_females"
 #cape_type = "heterosis"; results_name = "cape_heterosis_females"
 ```
@@ -120,7 +120,6 @@ to see the different patterns. The following heatmap
 shows the cluster assignments for `r k` clusters.
 
 ```{r cluster_temp, fig.width = 5, fig.height = 7}
-
 temp_clust <- hclust(dist(temp))
 cl <- cutree(temp_clust, k = k)
 
@@ -146,21 +145,36 @@ here by the mean temperature for each cluster for ease of
 comparison.
 
 ```{r cluster_sep, fig.width = 9, fig.height = 7}
-
-layout.mat <- get.layout.mat(k)
+sex <- data_obj$pheno[,"sex"]
+prop.mf <- matrix(NA, nrow = k, ncol = 2)
+colnames(prop.mf) <- c("F", "M")
+layout.mat <- get.layout.mat((k+1))
 layout(layout.mat)
 for(cl.k in 1:k){
     plot.new()
     plot.window(xlim = c(1,ncol(temp)), ylim = c(min(temp),  max(temp)))
     cl.idx <- which(ordered_cl == cl.k)
+    
+    prop.m <- signif(length(which(sex[cl.idx] == 1))/length(cl.idx), 2)
+    prop.f <- signif(length(which(sex[cl.idx] == 0))/length(cl.idx), 2)
+    prop.mf[cl.k,]  <- c(prop.f, prop.m)
+
     axis(1);mtext("Hrs", side = 1, line = 2.5)
     axis(2);mtext("Temp (C)", side = 2, line = 2.5)
     mtext(paste("Cluster", cl.k), side = 3)
     for(i in 1:length(cl.idx)){
-        points(1:ncol(temp), temp[cl.idx[i],], col = ordered_cl[cl.idx[i]], type = "b", pch = 16)
+        points(1:ncol(temp), temp[cl.idx[i],], col = ordered_cl[cl.idx[i]], type = "b", 
+            pch = sex[cl.idx[i]]+16)
     }
 }
-
+plot.new()
+plot.window(xlim = c(0,k), ylim = c(0,1))
+points(prop.mf[,1], pch = 16, type = "b", col = "#3182bd")
+points(prop.mf[,2], pch = 17, type = "b", col = "#31a354")
+legend(x = 0, y = 1, pch = c(16, 17), legend = c("female", "male"), col = c("#3182bd", "#31a354"))
+axis(1);axis(2)
+mtext("Cluster", side = 1, line = 2.5)
+mtext("Proportion", side = 2, line = 2.5)
 ```
 
 If we plot the first two principal components of the temperature
@@ -177,8 +191,8 @@ temp.pc <- temp.decomp$u[,1,drop=FALSE]*-1
 colnames(temp.pc) <- "Temp_PC1"
 rownames(temp.pc) <- rownames(temp)
 
-plot(temp.decomp$u*-1, col = ordered_cl, pch = 16, xlab = "PC1", ylab = "PC2")
-
+plot(temp.decomp$u*-1, col = ordered_cl, xlab = "PC1", ylab = "PC2", pch = sex+16)
+legend("topleft", pch = c(16, 17), legend = c("F", "M"))
 #also use the second PC
 temp.pc2  <- temp.decomp$u[,2,drop=FALSE]*-1 #also flipping this one for ease of interpretation later
 colnames(temp.pc2) <- "Temp_PC2"
@@ -317,28 +331,90 @@ on proximal Chr 17. Maybe the MHC locus? IL6 and TNF also map
 to Chr 17, although the QTLs look more distal. Neither IL1 beta 
 nor IFN beta map anywhere. 
 
-```{r temp_scan, fig.width = 9, fig.height = 5, results = "asis"}
+```{r temp_scan, fig.width = 9, fig.height = 9, results = "asis"}
 
 genoprobs <- calc_genoprob(lps)
 full.pheno <- cbind(temp.pc, temp.pc2, norm.immune)
-temp.scan <- scan1(genoprobs, full.pheno)
-temp.perm <- scan1perm(genoprobs, full.pheno, n_perm = 100)
+temp.scan <- scan1(genoprobs, full.pheno, addcovar = sex)
+temp.perm <- scan1perm(genoprobs, full.pheno, n_perm = 100, addcovar = sex)
+
+temp.scan.int <- scan1(genoprobs, full.pheno, addcovar = sex, intcovar = sex)
+temp.perm.int <- scan1perm(genoprobs, full.pheno, n_perm = 100, addcovar = sex, intcovar = sex)
+
+
 alpha <- c(0.05, 0.01, 0.1)
 sig.level <- summary(temp.perm, alpha = alpha)
-
+sig.level.int <- summary(temp.perm.int, alpha = alpha)
+#pdf("~/Desktop/lps.pdf", width = 9, height = 9)
 for(ph in 1:ncol(full.pheno)){
     cat("###", colnames(full.pheno)[ph], "\n")
+    par(mfrow = c(3,1))
    plot(temp.scan, lodcol = ph, map = lps$pmap, ylim = c(0, max(c(max(temp.scan), max(sig.level)*1.05))),
-        main = colnames(full.pheno)[ph])
+        main = paste(colnames(full.pheno)[ph], "\nsex as additive covariate"))
     plot.dim <- par("usr")
     plot.width <- plot.dim[2] - plot.dim[1]
     text.x <- plot.dim[2]-(plot.width*0.007) 
     line.stop <- plot.dim[2]-(plot.width*0.04) 
     segments(x0 = 0, x1 = line.stop, y0 = sig.level[,ph], lty = 2)
     text(x = text.x, y = sig.level[,ph], labels = alpha, adj = 1)
+    
+    plot(temp.scan.int, lodcol = ph, map = lps$pmap, ylim = c(0, max(c(max(temp.scan.int), max(sig.level)*1.05))),
+        main = paste(colnames(full.pheno)[ph], "\nsex as interactive covariate"))
+    plot.dim <- par("usr")
+    plot.width <- plot.dim[2] - plot.dim[1]
+    text.x <- plot.dim[2]-(plot.width*0.007) 
+    line.stop <- plot.dim[2]-(plot.width*0.04) 
+    segments(x0 = 0, x1 = line.stop, y0 = sig.level.int[,ph], lty = 2)
+    text(x = text.x, y = sig.level.int[,ph], labels = alpha, adj = 1)
+    
+    plot(temp.scan.int - temp.scan, map = lps$pmap, 
+        main = paste(colnames(full.pheno)[ph], "\nDifference between interactive and additive"))
+    plot.dim <- par("usr")
+    plot.width <- plot.dim[2] - plot.dim[1]
+    text.x <- plot.dim[2]-(plot.width*0.007) 
+    line.stop <- plot.dim[2]-(plot.width*0.04) 
+    segments(x0 = 0, x1 = line.stop, y0 = sig.level.int[,ph]-sig.level[,ph], lty = 2)
+    text(x = text.x, y = sig.level.int[,ph]-sig.level[,ph], labels = alpha, adj = 1)    
     cat("\n\n")
 }
+#dev.off()
 ```
+
+## Peaks
+
+The following tables show peaks for the QTL shown above.
+
+```{r peaks}
+add.peaks <- find_peaks(temp.scan, map = lps$pmap)
+int.peaks <- find_peaks(temp.scan.int, map = lps$pmap, threshold = 5)
+diff.peaks <- find_peaks(temp.scan.int-temp.scan, map = lps$pmap)
+```
+
+### Sex as additive covariate
+
+```{r sex_add}
+datatable(add.peaks)
+```
+
+### Sex as interactive covariate
+
+```{r sex_int}
+datatable(int.peaks)
+```
+
+## Difference between additive and interactive
+
+```{r diff}
+datatable(diff.peaks)
+```
+
+Some of these peaks are in interesting loci. The interactive 
+peak for IL6 on Chr 17 is near the gene Tnfrsf21, which is 
+involved in negative regulation of cytokine production.
+
+Multiple traits, including IL-6, TNF, and IFNB map to the 
+Fshr/Lhcgr locus.
+
 
 ## CAPE
 

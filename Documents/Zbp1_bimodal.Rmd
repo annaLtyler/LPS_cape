@@ -27,7 +27,7 @@ library(here)
 all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
 for(i in 1:length(all.fun)){source(all.fun[i])}
 
-all.packages <- c("pheatmap", "qtl2", "cluster")
+all.packages <- c("pheatmap", "qtl2", "cluster", "DT", "glmnet")
 load_libraries(all.packages)
 
 load_latest_cape(here("../../../git_repositories/cape"))
@@ -164,7 +164,7 @@ have genotypes non-randomly distributed across the bimodal split.
 The horizontal line shows the significance at p = 0.05. There are 
 quite a few peaks above the threshold.
 
-```{r extract_geno, fig.width = 10, fig.height = 4}
+```{r extract_geno, fig.width = 10, fig.height = 4, warning = FALSE, message = FALSE, error = FALSE}
 #pull out the genotype cods for all markers
 test.geno <- round(geno_obj[f.het,2,]*100)/100
 #tests <- apply(test.geno, 2, function(x) lm(het.pheno~x))
@@ -187,7 +187,7 @@ if(!file.exists(perm.file)){
     pval.perm <- matrix(NA, nrow = nperm, ncol = length(tests))
     colnames(pval.perm) <- names(tests)
     for(p in 1:nperm){
-        print(p)
+        #print(p)
         #randomize phenotype with respect to genoytpe
         perm.tables <- apply(test.geno, 2, 
             function(x) table(data.frame("pheno" = as.factor(het.factor), "geno" = as.factor(sample(x)))))
@@ -368,117 +368,144 @@ for(ch in 1:length(u_chr)){
 #dev.off()
 ```
 
-## Third Locus?
+## More complex inheritance?
 
 The chromosome 3 locus looks like an interesting candidate and contains
 the gene Mov10, which is predicted to be a helicase. Is it possible
-that a three-way interaction with another locus could better explain
-the bimodal distribution? Here we look for a combination of the Chr 3
-locus and another locus that has an effect on body temperature in the 
-Zbp1 het female mice.
+that a more complex interaction can genetically resolve the animals
+with high and low temperatures?
 
-```{r three_way}
+Below we explore this possibility using LASSO from the R package
+glmnet. We fit a model that predicts numeric temperature in the 
+female Zbp1 heterozygotes using genotype. The LASSO imposes a 
+sparsity penalty so that we get as few markers as possible 
+explaining the bimodal distribution.
 
-ch = 2
-effect.chr <- u_chr[ch]
-max.effect <- which.max(-log10(test.pval[large.effect[which(large.effect.chr == effect.chr)]]))
-effect.idx <- which(data_obj$geno_names$locus == names(max.effect))
-names(effect.idx) <- names(max.effect)
-max.chr[[ch]] <- effect.idx
-max.loc <- data_obj$marker_location[effect.idx]
-marker.name <- paste0("Chr", effect.chr, "; ", signif(max.loc/1e6, 3), "Mb")
-marker.geno <- round(geno_obj[,2,effect.idx], 2)
-
-
-f.het.geno <- round(geno_obj[f.het,2,]*100)/100
-
-
-three_way_geno <- apply(f.het.geno, 2, function(x) marker.geno[f.het]*x)
-test.tables <- apply(three_way_geno, 2, function(x) table(data.frame("pheno" = as.factor(het.factor), "geno" = x)))
-#pheatmap(test.tables[[1]], cluster_rows = FALSE, cluster_cols = FALSE)
-test.three <- lapply(test.tables, fisher.test)
-three.p <- sapply(test.three, function(x) x$p.value)
-qqunif.plot(three.p)
-
-
-min(three.p)
-max.marker <- which.min(three.p)
-
-stripchart(het.pheno~as.factor(marker.geno[f.het])*as.factor(f.het.geno[,max.marker]), 
-    method = "jitter", vertical = TRUE, pch = 16)
-abline(h = 34)
-
-#boxplot(het.pheno~as.factor(marker.geno[f.het])*as.factor(f.het.geno[,max.marker]))
-
-# Try LDA
-library(MASS)
-
-all.geno <- round(geno_obj[,2,]*100)/100
-temp.factor <- as.factor(data_obj$pheno[,"X7h"] > 34)
-test.df <- data.frame(cbind("pheno" = temp.factor, "sex" = as.factor(data_obj$pheno[,"sex"]), all.geno))
-
-perm = 100
-acc <- rep(NA, perm)
-
-for(p in 1:perm){
-    print(p)
-    sample <- sample(c(TRUE, FALSE), nrow(all.geno), replace=TRUE, prob=c(0.7,0.3))
-    train <- test.df[sample,]
-    test <- test.df[!sample,]
-    model <- lda(pheno~., data = train)
-    predicted <- predict(model, test)
-    acc[p] <- mean(predicted$class==test$pheno)
-}
-hist(acc); abline(v = 0.5)
-
-pred.order <- order(predicted$x)
-plot(predicted$x[pred.order], col = as.numeric(temp.factor[!sample])[pred.order], pch = 16)
-
-pheatmap(predicted$posterior, cluster_cols = FALSE)
-
-pred.class <- apply(predicted$posterior, 1, which.max)
-pred.table <- data.frame("predicted" = as.factor(pred.class), "actual" = as.factor(test$pheno))
-conf.matrix <- table(pred.table)
-pheatmap(conf.matrix, cluster_rows = FALSE, cluster_cols = FALSE, display_numbers = TRUE)
-
-
-plot(t(model$means))
-which(model$means > 1, arr.ind = TRUE)
-
-
-
-#try random forest
-test.df <- data.frame(cbind("pheno" = data_obj$pheno[,"X7h"], "sex" = as.factor(data_obj$pheno[,"sex"]), all.geno)) #numeric
-library(randomForest)
-model <- randomForest(pheno ~ ., data = test.df, importance = TRUE)
-importance(model)
-
-
+```{r lasso, warning = FALSE}
 #try LASSO
-library(glmnet)
-#test.df <- data.frame(cbind("pheno" = temp.factor, "sex" = as.factor(data_obj$pheno[,"sex"]), all.geno))# binary
-test.df <- data.frame(cbind("pheno" = data_obj$pheno[f.het,"X7h"], all.geno[f.het,]))# numeric
-test.df <- data.frame(cbind("pheno" = data_obj$pheno[f.het,"X7h"], all.geno[f.het,]))# numeric
-x <- model.matrix(pheno ~ ., test.df)[,-1]
-y <- test.df$pheno
-model <- cv.glmnet(x, y, alpha = 1)
-#model <- cv.glmnet(x, y, family = "binomial", alpha = 1)
-#coef(model, s = "lambda.min")
 
-plot(sort(coef(model), s = "lambda.min"))
+lasso.idx <- f.het #just the Zbp1 het females
+#lasso.idx <- f.idx #all females
+#lasso.idx <- 1:nrow(geno_obj) #all animals
 
-selected <- which(abs(round(coef(model, s = "lambda.min"), 2)) > 1)
+#make test objects for the training using the right animals
+lasso.geno <- round(geno_obj[lasso.idx,2,]*100)/100
+lasso.pheno <- data_obj$pheno[lasso.idx,"X7h"] #numeric
+
+#make a training data set that has the phenotype (either binary or quantitative) and markers
+test.df <- data.frame(cbind("pheno" = lasso.pheno, lasso.geno))
+
+test_acc <- function(pred, act){
+    tn <- length(intersect(which(pred < 34), which(act < 34)))
+    tp <- length(intersect(which(pred > 34), which(act > 34)))
+    fp <- length(intersect(which(pred > 34), which(act < 34)))
+    fn <- length(intersect(which(pred < 34), which(act > 34)))
+    acc <- (tp + tn) / (tp + tn + fp + fn)
+    return(acc)
+}
+
+trials <- 10
+models <- vector(mode = "list", length = trials)
+model.accuracy <- rep(NA, trials)
+for(p in 1:trials){
+    #print(p)
+    sample <- sample(c(TRUE, FALSE), length(lasso.pheno), replace=TRUE, prob=c(0.7,0.3))
+    train <- test.df[sample, ]
+    test <- as.matrix(test.df[!sample,-1])
+    x <- model.matrix(pheno ~ ., test.df)[,-1]
+    y <- test.df$pheno
+    model <- cv.glmnet(x, y, alpha = 1) #for numeric outcome
+    models[[p]] <- model
+    temp.pred <- predict(model, test)
+    #plot(temp.pred, lasso.pheno[!sample]); abline(v = 34)
+    model.accuracy[p] <- test_acc(temp.pred, lasso.pheno[!sample])
+}
+
+```
+
+The plot below shows the distribution of coefficients for markers 
+selected across all models.
+
+
+```{r lasso_results, width = 10, height = 5}
+coef.thresh = 0.1
+
+acc.models <- which(model.accuracy == 1)
+model.coef <- t(sapply(models[acc.models], function(x) as.vector(coef(x, s = "lambda.min"))))
+markers.selected <- apply(model.coef, 1, function(x) which(x != 0))
+total.markers <- setdiff(Reduce("union", markers.selected), 1)
+
+boxplot(model.coef[,total.markers], ylab = "Coefficient", main = "non-zero LASSO coefficients", 
+    xlab = "Index")
+abline(h = 0)
+abline(h = c(coef.thresh*-1, coef.thresh), lty = 2, col = "gray")
+```
+
+We selected all markers with absolute mean coefficients greater than 
+`r coef.thresh`. The following table shows the names and locations
+of these markers. 
+
+The higher the threshold we use, the fewer markers we get, but the
+less well temperature is predicted. This suggests that the bimodal
+distribution seen in the Zbp1 hets is inherited in a complex manner.
+
+The largest effect loci can be seen by sorting the table by coefficient.
+
+```{r markers}
+selected <- which(abs(colMeans(model.coef)) > coef.thresh)
 selected.markers <- colnames(test.df)[selected[2:length(selected)]]
 selected.idx <- match(selected.markers, data_obj$geno_name[[3]])
 selected.chr <- data_obj$chromosome[selected.idx]
 selected.pos <- data_obj$marker_location[selected.idx]
-coef <- round(coef(model, s = "lambda.min"), 2)
-cbind(selected[2:length(selected)], selected.chr, selected.pos, coef[selected[2:length(selected)]])
+selected.coef <- colMeans(model.coef[,selected])
+marker.df <- data.frame("marker" = selected.markers, "Chr" = selected.chr, 
+    "Pos" = selected.pos, "Coef" = signif(colMeans(model.coef[,selected[2:length(selected)]]), 2))
+datatable(marker.df)
+```
 
-selected.geno <- round(geno_obj[,2,selected.idx], 2)
-pheatmap(selected.geno, cluster_rows = FALSE, cluster_cols = FALSE)
+The following plot shows a decomposition of the genotype matrix
+using just these markers. Each point is an animal, and the color
+indicates its body temperature at 7 hrs, where the bimodal 
+distribution occurs. Blue dots indicate body temperatures below
+34 degrees and red dots indicate body temperatures above 34 
+degrees.
 
-plot.decomp(selected.geno, cols = colors.from.values(test.df$pheno, use.pheatmap.colors = TRUE))
+The first and second PCs together predict body temperature very well.
+
+
+```{r pred, fig.height = 7, fig.width = 7}
+selected.geno <- round(lasso.geno[,selected.idx], 2)
+#pheatmap(selected.geno, cluster_rows = FALSE, cluster_cols = FALSE)
+
+temp.cols <- colors.from.values(test.df$pheno, split.at.vals = TRUE, split.points = 34,
+    col.scale = c("blue", "red"), grad.dir = "ends", light.dark = "d")
+
+test.decomp <- plot.decomp(selected.geno, 
+    cols = temp.cols, pc = min(c(3, length(selected.markers))))
+```
+
+The following bar plot shows the correlation of each PC above
+with body temperature. The first PC is very highly correlated
+with body temperature.
+
+```{r pc_cor}
+barplot_with_num(apply(test.decomp$u, 2, function(x) signif(cor(x, lasso.pheno), 2)),
+    main = "PC correlation with temperature at 7 hrs", ylab = "Pearson Correlation")
+```
+
+The following plots show the PCs plotted against body temperature.
+This suggests that this bimodal pattern is probably highly polygenic.
+It takes `r length(selected.markers)` additional markers, to predict the 
+bimodal split observed at the Zbp1 locus.
+
+```{r temp_pc, fig.width = 12, fig.height = 4}
+par(mfrow = c(1,3))
+for(i in 1:ncol(test.decomp$u)){
+    plot(test.decomp$u[,i], lasso.pheno, xlab = paste("PC", i), ylab = "Temperature", 
+        pch = 16, main = paste("PC", i), col = temp.cols)
+    abline(h = 34, v = 0)
+}
+
 ```
 
 ## Non-Mendelian Ratios

@@ -1,0 +1,307 @@
+---
+title: "Query cape"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+
+The purpose of this workflow is to run query cape on the
+LPS data to see if there are any loci that interact specifically
+with the Lhcgr/Fshr locus.
+
+
+```{r setup, warning = FALSE, message = FALSE, error = FALSE}
+rm(list = ls())
+
+library(here)
+
+source(here("Code", "load_libraries.R"))
+
+all.packages <- c("pheatmap", "qtl2", "cluster", "DT")
+load_libraries(all.packages)
+
+load_latest_cape(here("../../../git_repositories/cape"))
+
+query.cape.fun <- list.files("~/Documents/git_repositories/query_cape", full.names = TRUE)
+for(i in 1:length(query.cape.fun)){source(query.cape.fun[i])}
+
+#load local functions last
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+
+#decide if we want to code markers additively, use a heterosis
+#model in which AA and BB are 0 and AB is 1 across the whole
+#genome, or use a heterosis coding just on chromosome 17, where
+#we have observed heterosis previously
+
+cape_type = "heterosis17"; results_name <- "query_cape_heterosis17"
+#cape_type = "heterosis17"; results_name <- "query_cape_zbp1"
+#cape_type = "heterosis17"; results_name <- "query_cape_heterosis17_females"
+```
+
+We need to take the non-numeric phenotypes out of the phenotype
+file and put them into covariates. I also added 'NA' to the na.strings
+argument in the yaml file.
+
+```{r num_pheno}
+#if this is the first time through, create a new data directory
+
+mod.data.dir <- here("Data", "qtl2_files_mod")
+
+if(!file.exists(mod.data.dir)){
+    #duplicate all files
+    file.copy(here("Data", "qtl2_files"), mod.data.dir, recursive = TRUE)
+
+    orig.pheno <- read.csv(here("Data", "qtl2_files", "lps_pheno.csv"))
+    orig.covar <- read.csv(here("Data", "qtl2_files", "lps_covar.csv"))
+
+    nonnum.pheno.col <- c("strain", "category")
+    num.pheno.col <- setdiff(colnames(orig.pheno), nonnum.pheno.col)
+    nonnum.pheno <- cbind(orig.covar, orig.pheno[,nonnum.pheno.col])
+
+    num.pheno <- orig.pheno[,num.pheno.col]
+
+    write.table(num.pheno, here("Data", "qtl2_files_mod", "qtl2_files", "lps_pheno.csv"),
+        sep = ",", quote = FALSE, row.names = FALSE)
+    write.table(nonnum.pheno, here("Data", "qtl2_files_mod", "qtl2_files", "lps_covar.csv"), 
+        sep = ",", quote = FALSE, row.names = FALSE)
+}
+```
+
+```{r load_data, message = FALSE, error = FALSE, warning = FALSE}
+#add 'NA' to the na.strings arguments in the yaml file to 
+#suppress the warning about "NAs introduced by coercion"
+lps <- read_cross2(here("Data", "qtl2_files_mod", "qtl2_files", "lps.yaml"))
+lps_cape <- qtl2_to_cape(lps)
+
+data_obj <- lps_cape$data_obj
+geno_obj <- lps_cape$geno_obj
+
+gene.info <- read.delim(here("Data", "general", "mouse_gene_info.txt"))
+```
+
+Add temperature PCs
+
+```{r temp_pc}
+sex <- data_obj$pheno[,"sex"]
+temp.idx <- grep("X", colnames(data_obj$pheno))
+temp.label <- gsub("X", "", colnames(data_obj$pheno)[temp.idx])
+temp <- data_obj$pheno[,temp.idx]
+temp.decomp <- plot.decomp(temp, plot.results = FALSE)
+#temp.decomp <- plot.decomp(temp, cols = data_obj$pheno[,"sex"]+1) #no effect of sex
+#I am flipping this so it is positively correlated with temperature
+temp.pc <- temp.decomp$u[,1,drop=FALSE]*-1
+colnames(temp.pc) <- "Temp_PC1"
+rownames(temp.pc) <- rownames(temp)
+
+#also use the second PC
+temp.pc2  <- temp.decomp$u[,2,drop=FALSE]*-1 #also flipping this one for ease of interpretation later
+colnames(temp.pc2) <- "Temp_PC2"
+rownames(temp.pc2) <- rownames(temp)
+
+data_obj$pheno <- cbind(data_obj$pheno, temp.pc, temp.pc2)
+```
+
+```{r remove_males}
+if(length(grep("female", results_name)) > 0){
+    male.idx <- which(data_obj$pheno[,"sex"] == 1)
+    data_obj <- remove_ind(data_obj, male.idx)
+    geno_obj <- geno_obj[-male.idx,,]
+}
+```
+
+Find the genotype of the Fshr/Lhr locus, and pull it out.
+
+```{r query_geno}
+chr = 17; loc = 89658511 #Lhgcr locus from single scan
+#chr = 2; loc = 173048405 #nearet to Zbp1
+
+chr.idx <- which(data_obj$chromosome == chr)
+nearest.idx <- get.nearest.pt(data_obj$marker_location[chr.idx], loc)
+nearest.marker <- data_obj$geno_names[[3]][chr.idx[nearest.idx]]
+nearest.geno <- geno_obj[,,nearest.marker]
+rownames(nearest.geno) <- rownames(data_obj$pheno)
+```
+
+```{r het17}
+
+if(cape_type == "heterosis17"){
+    #run cape with a coding for heterosis only on chromosome 17.
+    #AA and BB are 0 and A/B is 1
+
+    code_heterosis <- function(marker_geno, recode = TRUE){
+        if(!recode){
+            return(marker_geno)
+        }
+        new.geno <- matrix(0, nrow = nrow(marker_geno), ncol = ncol(marker_geno))
+        dimnames(new.geno) <- dimnames(marker_geno)
+        #alleles that are 0 or 1 are the reference allele
+        which.hom <- Reduce("union", lapply(1:ncol(marker_geno), function(x) which(marker_geno[,x] > 0.9)))
+        new.geno[which.hom,1] <- 1
+        #alleles that are 0.5 are the alternate
+        which.het <- Reduce("intersect", lapply(1:ncol(marker_geno), function(x) which(marker_geno[,x] < 0.6)))
+        new.geno[which.het,2] <- 1
+        return(new.geno)
+    }
+
+    
+    do.recode <- rep(FALSE, dim(geno_obj)[[3]])
+    chr17.idx <- which(data_obj$chromosome == 17)
+    do.recode[chr17.idx] <- TRUE
+
+    heterosis_markers <- lapply(1:dim(geno_obj)[3], function(x) code_heterosis(geno_obj[,,x], recode = do.recode[x]))
+    heterosis_geno <- abind(heterosis_markers, along = 3)
+    dimnames(heterosis_geno) <- dimnames(geno_obj)
+
+    #also recode query marker if it is on Chr 17
+    if(chr == 17){
+        het.geno <- code_heterosis(marker_geno = nearest.geno)
+        query.geno <- het.geno[,2,drop=FALSE]
+        colnames(query.geno) <- "query"
+    }
+}else{
+    heterosis_geno <- geno_obj
+    query.geno <- nearest.geno[,2,drop=FALSE]
+    colnames(query.geno) <- "query"
+}
+
+already.run <- file.exists(here("Results", results_name, "Variant_Influences_Interactions.csv"))
+
+if(!already.run){
+    final_obj <- run_query_cape(pheno_obj = data_obj, heterosis_geno, 
+        query_genotype = query.geno, 
+        results_file = "cross.RDS", p_or_q = 0.05, n_cores = 4, 
+        initialize_only = FALSE, verbose = TRUE, run_parallel = FALSE, 
+        param_file = here("Results", results_name, "0_lps.parameters_0.yml"), 
+        yaml_params = NULL, 
+        results_path = here("Results", results_name), 
+        plot_pdf = TRUE)
+}else{
+    final_obj <- readRDS(here("Results", results_name, "cross.RDS"))
+}
+
+#pdf(here("Results", results_name, "Variant_Influences.pdf"))
+#plot_variant_influences_query(final_obj, geno_obj, p_or_q = 0.05)
+#dev.off()
+
+#plot deviation from additivity across the genome
+pdf(here("Results", results_name, "Variant_Effects.pdf"), width = 10, height = 7)
+plot_variant_effects_query(final_obj, geno_obj, p_or_q = 0.05)
+dev.off()
+
+
+#test <- plotly_variant_effects_query(final_obj, geno_obj, p_or_q = 0.05)
+#test
+#stop()
+```
+
+```{r sandbox, eval = FALSE}
+query_geno <- abind(geno_obj, het.geno, along = 3)
+dimnames(query_geno)[[3]][dim(query_geno)[3]] <- "query"
+final_obj$geno_names[[3]][length(final_obj$geno_names[[3]])] <- "query"
+
+
+chr = 2; pos = 173048405 #Zbp1
+chr = 2; pos = 100025500 #test
+chr.idx <- which(final_obj$chromosome == chr)
+nearest.pos <- get.nearest.pt(final_obj$marker_location[chr.idx], pos)
+marker.name <- paste0(final_obj$geno_names[[3]][chr.idx[nearest.pos]], "_B")
+
+#marker.name = "S6J043436429_B" #from variant influences table
+
+plot_effects(data_obj = final_obj, geno_obj = query_geno, marker1 = "query_B", 
+    marker2 = marker.name, pheno_type = "norm_pheno",
+    error_bars = "se", plot_type = "b")
+```
+
+```{r clin}
+
+get_table_genes <- function(clin.table){
+    clin.names <- clin.table[grep("_B", clin.table)]
+    clin.idx <- match(gsub("_B", "", clin.names), final_obj$geno_names[[3]])
+    clin.chr <- final_obj$chromosome[clin.idx]
+    clin.pos <- final_obj$marker_location[clin.idx]
+    u_chr <- unique(clin.chr)
+    gene.list <- vector(mode = "list", length = length(u_chr))
+    names(gene.list) <- u_chr
+    for(ch in 1:length(u_chr)){
+        chr.idx <- which(clin.chr == u_chr[ch])
+        pos.min <- min(clin.pos[chr.idx])
+        pos.max <- max(clin.pos[chr.idx])
+        gene.chr.idx <- which(gene.info[,"chromosome_name"] == u_chr[ch])
+        above.min <- which(gene.info[,"start_position"] > pos.min)
+        below.max <- which(gene.info[,"start_position"] > pos.max)
+        gene.pos <- Reduce("intersect", list(gene.chr.idx, above.min, below.max))
+        chr.gene <- gene.info[gene.pos,]
+        gene.list[[ch]] <- chr.gene
+    }
+    return(gene.list)
+}
+
+get_marker_label <- function(marker_name){
+    marker_chr <- get_marker_chr(final_obj, marker_name)
+    marker_pos <- signif(get_marker_location(final_obj, marker_name)/1e6, 2)
+    if(marker_chr == 0){
+        marker_label <- marker_name
+    }else{
+        marker_label <- paste0(marker_chr, ":", marker_pos, "Mb")
+    }
+    return(marker_label)
+}
+
+
+
+clin.effect <- clinical.effects.int(final_obj, query_geno, clinical.benefit = c("l", rep("*", 5)),
+    allow.error.overlap = FALSE)
+
+ben.idx <- which(clin.effect[[1]][,"Clinical_Effect"] == "beneficial")
+clin.ben <- clin.effect[[1]][ben.idx,]
+ben.genes <- get_table_genes(clin.table = clin.ben)
+
+
+pdf("~/Desktop/clin_benefits.pdf", width = 12, height = 8)
+for(i in 1:nrow(clin.ben)){
+    marker1_label <- get_marker_label(clin.ben[i,1])
+    marker2_label <- get_marker_label(clin.ben[i,2])
+    plot_effects(final_obj, query_geno, marker1 = clin.ben[i,1],
+        marker2 = clin.ben[i,2], pheno_type = "normalized", 
+        error_bars = "se", plot_type = "l", bin_continuous_genotypes = TRUE,
+        marker1_label = marker1_label, marker2_label = marker2_label)
+}
+dev.off()
+
+
+harm.idx <- which(clin.effect[[1]][,"Clinical_Effect"] == "harmful")
+clin.harm <- clin.effect[[1]][harm.idx,]
+harm.genes <- get_table_genes(clin.harm)
+
+pdf("~/Desktop/clin_harmful.pdf", width = 12, height = 8)
+for(i in 1:nrow(clin.harm)){
+
+    marker1_label <- get_marker_label(clin.harm[i,1])
+    marker2_label <- get_marker_label(clin.harm[i,2])
+
+    plot_effects(final_obj, query_geno, marker1 = clin.harm[i,1],
+        marker2 = clin.harm[i,2], pheno_type = "normalized", 
+        error_bars = "se", plot_type = "l", bin_continuous_genotypes = TRUE,
+        marker1_label = marker1_label, marker2_label = marker2_label)
+
+    #plot both ways for ease of interpretation
+    plot_effects(final_obj, query_geno, marker1 = clin.harm[i,2],
+        marker2 = clin.harm[i,1], pheno_type = "normalized", 
+        error_bars = "se", plot_type = "l", bin_continuous_genotypes = TRUE,
+        marker1_label = marker2_label, marker2_label = marker1_label)
+
+
+}
+dev.off()
+
+
+
+```

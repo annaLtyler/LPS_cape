@@ -4,10 +4,12 @@
 #beneficial for a patient, and which are harmful
 #clinical.benefit is a vector that says whether each phenotype is
 #beneficial if it is high (h), low (l), or doesn't matter (*)
+#allow.error.overlap: set this to FALSE if you are looking at the
+#bar plots and you want to plot particularly large effects.
 
 clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 0.05, 
 	covar = NULL, scan.what = c("normalized.traits", "raw.traits"), 
-	geno.coding = c("Additive", "Dominant", "Recessive")){
+	geno.coding = c("Additive", "Dominant", "Recessive"), allow.error.overlap = FALSE){
 	
 	geno.coding = geno.coding[1]
 	pheno <- get_pheno(data.obj, scan.what)
@@ -49,7 +51,7 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 			}
 		}	
 		
-	get.pheno.vals <- function(marker1, marker2, phenotype){		
+	get.pheno.vals <- function(marker1, marker2, phenotype, test.plot = FALSE){		
 		
 		marker1.geno <- get.genotype(marker1)
 		if(is.null(marker1.geno)){return(rep(NA, 6))}
@@ -65,32 +67,69 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 		min1 <- which(marker1.geno == min(marker1.geno))
 		min2 <- which(marker2.geno == min(marker2.geno))
 
+		#reference phenotype
 		baseline <- mean(phenotype[intersect(min1, min2)], na.rm = TRUE)
+
+		#pheno with just variant 1
 		just1.pheno <- mean(phenotype[intersect(max1, min2)]) - baseline
+		se1.pheno <- sd(phenotype[intersect(max1, min2)])/sqrt(length(intersect(max1, min2)))
+		min.pheno1 <- just1.pheno - se1.pheno
+		max.pheno1 <- just1.pheno + se1.pheno
+
+		#pheno with just variant 2
 		just2.pheno <- mean(phenotype[intersect(min1, max2)]) - baseline
+		se2.pheno <- sd(phenotype[intersect(min1, max2)])/sqrt(length(intersect(min1, max2)))
+		min.pheno2 <- just2.pheno - se2.pheno
+		max.pheno2 <- just2.pheno + se2.pheno
+
+		#pheno with both variants
 		both.pheno <- mean(phenotype[intersect(max1, max2)]) - baseline
+		both.se <- sd(phenotype[intersect(max1, max2)])/sqrt(length(intersect(max1, max2)))
+		min.both <- both.pheno - both.se
+		max.both <- both.pheno + both.se
+
+		#range for additive
 		add.exp <- just1.pheno + just2.pheno
+		min.add <- add.exp - (se1.pheno + se2.pheno)
+		max.add <- add.exp + (se1.pheno + se2.pheno)
 		
-		if(is.finite(add.exp)){
-			if(add.exp < 0){
-				int.expect <- "expect.negative"
+		errors.overlap <- segments.overlap(min.both, max.both, min.add, max.add)
+		
+		if(test.plot){
+			plot.new()
+			plot.window(ylim = c(min(c(min.both, min.add)), max(c(max.both, max.add))), xlim = c(0,1))
+			segments(y0 = min.both, y1 = max.both, x0 = 0.25, lwd = 3); text(y = max.both, x = 0.25 ,"actual", adj = 0)
+			segments(y0 = min.add, y1 = max.add, x0 = 0.75, lwd = 3); text(y = max.add, x = 0.75 ,"additive", adj = 0)			
+			abline(h = both.pheno)
+		}
+
+		if(allow.error.overlap){errors.overlap <- FALSE}
+
+		if(errors.overlap){
+			int.exp <- "none"
+			int.effect <- "none" 
+		}else{
+			if(is.finite(add.exp)){
+				if(add.exp < 0){
+					int.expect <- "expect.negative"
+					}else{
+					int.expect <- "expect.positive"
+					}
+				
+				if(abs(both.pheno) < abs(add.exp)){
+					int.effect <- "alleviating"
+					}else{
+					int.effect <- "aggravating"
+					}
 				}else{
-				int.expect <- "expect.positive"
-				}
-			
-			if(abs(both.pheno) < abs(add.exp)){
-				int.effect <- "alleviating"
-				}else{
-				int.effect <- "aggravating"
-				}
-			}else{
-				int.expect <- "none"
-				int.effect <- "none"
-				}
+					int.expect <- "none"
+					int.effect <- "none"
+					}
+		}
 		
 		pheno.result <- c(just1.pheno, just2.pheno, add.exp, both.pheno, int.expect, int.effect)
 		return(pheno.result)
-		}
+	}
 
 
 	#find which effects on phenotypes are beneficial
@@ -100,6 +139,8 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 		
 		high.locale <- which(clinical.benefit == "h")
 		low.locale <- which(clinical.benefit == "l")
+
+		allowed.int <- which(result.mat[,"interaction.effect"] != "none")
 
 		diff.expect <- as.numeric(result.mat[,"actual"]) - as.numeric(result.mat[,"expected.additive"])
 		higher.than.expected <- which(diff.expect > 0)
@@ -111,7 +152,7 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 		#for traits that we want high, interactions are
 		#beneficial if the actual value is higher than 
 		#the expected value
-		ben.high <- intersect(high.locale, higher.than.expected)
+		ben.high <- Reduce("intersect", list(high.locale, higher.than.expected, allowed.int))
 		if(length(ben.high) > 0){
 			clin.effects[ben.high] <- "beneficial"
 			}
@@ -119,7 +160,7 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 		#for traits that we want low, interactions
 		#are beneficial if the actual value is lower
 		#than the expected value
-		ben.low <- intersect(low.locale, lower.than.expected)
+		ben.low <- Reduce("intersect", list(low.locale, lower.than.expected, allowed.int))
 		if(length(ben.low) > 0){
 			clin.effects[ben.low] <- "beneficial"
 			}
@@ -130,7 +171,7 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 		#for traits that we want high, interactions are
 		#harmful if the actual value is lower than 
 		#the expected value
-		harm.high <- intersect(high.locale, lower.than.expected)
+		harm.high <- Reduce("intersect", list(high.locale, lower.than.expected, allowed.int))
 		if(length(harm.high) > 0){
 			clin.effects[harm.high] <- "harmful"
 			}
@@ -138,14 +179,14 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 		#for traits that we want low, interactions
 		#are harmful if the actual value is higher than
 		#expected
-		harm.low <- intersect(low.locale, higher.than.expected)
+		harm.low <- Reduce("intersect", list(low.locale, higher.than.expected, allowed.int))
 		if(length(harm.low) > 0){
 			clin.effects[harm.low] <- "harmful"
 			}
 		
 		return(clin.effects)
 		
-		}
+	}
 	
 	scan.effects <- function(full.effects.mat){
 		all.effects <- full.effects.mat[,"clinical"]
@@ -164,19 +205,23 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 	names(all.int.effects) <- int.names
 	for(i in 1:nrow(var.inf)){
 		marker1 <- var.inf[i,1]
-		marker2 <- var.inf[i,4]		
+		marker2 <- var.inf[i,4]	
 
-		#plot_effects(data.obj, geno.obj, marker1, marker2, plot_type = "b", error_bars = "se", covar = covar)
+		if(marker1 == "query"){marker1 = "query_B"}	
+		if(marker2 == "query"){marker2 = "query_B"}	
+
+		#quartz();plot_effects(data.obj, geno.obj, marker1, marker2, plot_type = "b", error_bars = "se", covar = covar)
 
 		#find phenotype values for individuals with different genotype combinations
 		#and 
 		all.pheno.effects <- matrix(NA, nrow = ncol(pheno), ncol = 6)
 		for(ph in 1:ncol(pheno)){
-			all.pheno.effects[ph,] <- get.pheno.vals(marker1, marker2, phenotype = pheno[,ph])	
+			all.pheno.effects[ph,] <- get.pheno.vals(marker1, marker2, 
+				phenotype = pheno[,ph])	
 			}
 		rownames(all.pheno.effects) <- colnames(pheno)
 		colnames(all.pheno.effects) <- c("marker1", "marker2", "expected.additive", "actual", "expected.effect", "interaction.effect")
-		clin <- evaluate.effect(all.pheno.effects)
+		clin <- evaluate.effect(result.mat = all.pheno.effects)
 
 		all.pheno.effects <- cbind(all.pheno.effects, clin)
 		colnames(all.pheno.effects)[7] <- "clinical"

@@ -1,5 +1,5 @@
 ---
-title: "LPS Sensitivity"
+title: "Hardy-Weinberg Equilibrium"
 author: Anna L Tyler
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output: 
@@ -13,7 +13,10 @@ output:
 ## Introduction
 
 The purpose of this workflow is to look at Hardy-Weinberg 
-equilibrium and LD in the LPS mice. 
+equilibrium and LD in the LPS mice. Sasha noted that it looked
+as if there were a depletion of B6/B6 homozygotes at the Fshr 
+locus. This workflow tries to validate that finding and expand
+on it.
 
 We read the phenotype and genotype data from one of the cape
 results directories specified here.
@@ -174,6 +177,22 @@ gene_hw <- function(gene.name){
     invisible(result)
 }
 
+
+pos_hw <- function(chr, pos, plot.label = ""){
+
+    gene_loc <- find_marker(lps$pmap, chr = chr, pos = pos)
+    gene_geno <- pull_genoprobpos(genoprobs, lps$pmap, chr = chr, pos = pos)
+    gene_prob <- apply(gene_geno, 1, function(x) sum(x*c(0, 0.5, 1)))
+
+    hw.stats <- plot_hw(gene_geno, gene_loc, main = paste(plot.label, "locus"))
+    hw.stats.f <- plot_hw(gene_geno[f.idx,], gene_loc, main = paste(plot.label, "locus; Females"))
+    hw.stats.m <- plot_hw(gene_geno[m.idx,], gene_loc, main = paste(plot.label, "locus; Males"))
+
+    result <- list("plot.label" = plot.label, "chromosome" = chr, "Position" = pos,
+        "nearest_marker" = gene_loc, "genotype" = gene_geno, "genotype_calls" = gene_prob,
+        "Frequencies" = hw.stats$Frequencies, "p" = hw.stats$p, adj.p = hw.stats$adj.p)
+    invisible(result)
+}
 
 adj_p <- function(hw_p, marker_name){
     adj.p <- p.adjust(unlist(hw_p[1:19]), "fdr")
@@ -353,11 +372,14 @@ for(ch in 1:length(u_chr)){
 
 The following bar plot shows that the Fshr locus is not out 
 of Hardy-Weinberg equilibrium overall or for either of the 
-sexes.
+sexes. Am I working with different data than Sasha was when
+he noticed this allele imbalance?
 
 ```{r hw, fig.width = 10, fig.height = 4}
 par(mfrow = c(1,3))
-fshr_result <- gene_hw("Fshr")
+#fshr_result <- gene_hw("Fshr")
+#use the significant marker in the Fshr locus
+fshr_result <- pos_hw(chr = 17, pos = 89658511, plot.label = "Fshr")
 ```
 
 The following box plots show that we do see the sex-specific effect
@@ -375,8 +397,6 @@ boxplot(data_obj$pheno[m.idx,"Temp_PC1"]*1~as.factor(round(fshr_result$genotype_
     main = "Males")
 mtext("Effect of Fshr locus on response to LPS", outer = TRUE, line = -1.5)
 ```
-
-
 
 We then looked for long range LD with the Fshr locus that might indicate 
 combinations of alleles that might be lethal. The qq plot for the p values 
@@ -475,5 +495,25 @@ some deviation from HW equilibrium, particularly in the females.
 
 ```{r zbp1_hw, fig.width = 10, fig.height = 4}
 par(mfrow = c(1,3))
-Zbp1_result <- gene_hw("Zbp1")
+Zbp1_result <- pos_hw(chr = 2, pos = 173048405, plot.label = "Zbp1")
+```
+
+```{r Fshr_Zbp1, eval = TRUE}
+fshr.geno <- round(fshr_result$genotype_calls, 2)
+zbp1.geno <- round(Zbp1_result$genotype_calls, 2)
+
+together <- table(data.frame("Fshr" = fshr.geno, "Zbp1" = zbp1.geno))
+fisher.test(together)
+
+#recode for heterosis at the Fshr locus
+#hets are 1, all else are 0
+heterosis.fshr <- fshr.geno
+heterosis.fshr[which(fshr.geno == 0.5)] <- 1
+heterosis.fshr[which(fshr.geno != 0.5)] <- 0
+
+het.together <- table(data.frame("Fshr" = heterosis.fshr, "Zbp1" = zbp1.geno))
+fisher.test(het.together)
+
+write.table(data.frame("Fshr" = heterosis.fshr, "Zbp1" = zbp1.geno), "~/Desktop/fshr_zbp1.txt",
+    quote = FALSE, sep = "\t")
 ```

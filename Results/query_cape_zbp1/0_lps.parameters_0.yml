@@ -9,6 +9,7 @@ traits:
  - TNF
  - IFN.b
 covariates:
+ - sex
  - cross_direction
 scan_what:
  - eigentraits 
@@ -49,16 +50,16 @@ alpha:
 marker_selection_method:
  - top_effects
 peak_density:
- - 0.01 
+ - 0.5 
 tolerance:
  - 5 
 num_alleles_in_pairscan:
- - 1500
+ - 1000
 #================================================
 # Pairscan Parameters 
 #================================================
 max_pair_cor:
  - 0.5 
 pairscan_null_size:
- - 1500000
+ - 100000
 
