@@ -111,9 +111,9 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 		}else{
 			if(is.finite(add.exp)){
 				if(add.exp < 0){
-					int.expect <- "expect.negative"
+					int.exp <- "expect.negative"
 					}else{
-					int.expect <- "expect.positive"
+					int.exp <- "expect.positive"
 					}
 				
 				if(abs(both.pheno) < abs(add.exp)){
@@ -122,12 +122,13 @@ clinical.effects.int <- function(data.obj, geno.obj, clinical.benefit, p.or.q = 
 					int.effect <- "aggravating"
 					}
 				}else{
-					int.expect <- "none"
+					int.exp <- "none"
 					int.effect <- "none"
 					}
 		}
 		
-		pheno.result <- c(just1.pheno, just2.pheno, add.exp, both.pheno, int.expect, int.effect)
+		pheno.result <- c(just1.pheno, just2.pheno, add.exp, 
+			both.pheno, int.exp, int.effect)
 		return(pheno.result)
 	}
 

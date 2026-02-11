@@ -26,12 +26,15 @@ source(here("Code", "load_libraries.R"))
 all.packages <- c("pheatmap", "qtl2", "cluster", "DT")
 load_libraries(all.packages)
 
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+
 load_latest_cape(here("../../../git_repositories/cape"))
 
 query.cape.fun <- list.files("~/Documents/git_repositories/query_cape", full.names = TRUE)
 for(i in 1:length(query.cape.fun)){source(query.cape.fun[i])}
 
-#load local functions last
+#load local functions again to mask distal functions
 all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
 for(i in 1:length(all.fun)){source(all.fun[i])}
 
@@ -187,12 +190,12 @@ if(!already.run){
 }
 
 #pdf(here("Results", results_name, "Variant_Influences.pdf"))
-#plot_variant_influences_query(final_obj, geno_obj, p_or_q = 0.05)
+#plot_variant_influences_query(final_obj, geno_obj, p_or_q = 0.05, scale_coord = 1e6, coord_label = "Mbp")
 #dev.off()
 
 #plot deviation from additivity across the genome
 pdf(here("Results", results_name, "Variant_Effects.pdf"), width = 10, height = 7)
-plot_variant_effects_query(final_obj, geno_obj, p_or_q = 0.05)
+plot_variant_effects_query(final_obj, geno_obj, p_or_q = 0.05, scale_coord = 1e6)
 dev.off()
 
 
@@ -256,8 +259,12 @@ get_marker_label <- function(marker_name){
 }
 
 
+query_geno <- abind(geno_obj, het.geno, along = 3)
+dimnames(query_geno)[[3]][dim(query_geno)[3]] <- "query"
+final_obj$geno_names[[3]][length(final_obj$geno_names[[3]])] <- "query"
 
-clin.effect <- clinical.effects.int(final_obj, query_geno, clinical.benefit = c("l", rep("*", 5)),
+clin.effect <- clinical.effects.int(final_obj, query_geno, 
+    clinical.benefit = c("l", rep("*", 5)),
     allow.error.overlap = FALSE)
 
 ben.idx <- which(clin.effect[[1]][,"Clinical_Effect"] == "beneficial")

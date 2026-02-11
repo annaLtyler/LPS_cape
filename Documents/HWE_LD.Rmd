@@ -490,7 +490,7 @@ dev.off()
 
 ### Zbp1 Locus
 
-The following bar plot shows that the Zfbp1 locus does have
+The following bar plot shows that the Zbp1 locus does have
 some deviation from HW equilibrium, particularly in the females.
 
 ```{r zbp1_hw, fig.width = 10, fig.height = 4}

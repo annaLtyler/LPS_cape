@@ -1,0 +1,131 @@
+---
+title: "Lethality"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+params:
+    results_dir: here("tests", "testthat", "results")
+---
+
+
+## Introduction
+
+The purpose of this workflow is to do a quick test to see 
+if ratios of F2 individuals with given genotypes are 
+under-represented indicating lethality of specific genotypes.
+
+We use cape to read in the data.
+
+```{r set_path, message = FALSE, error = FALSE, warning = FALSE}
+rm(list = ls())
+
+library(here)
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+
+all.packages <- c("pheatmap", "qtl2", "cluster", "DT", "glmnet")
+load_libraries(all.packages)
+
+load_latest_cape(here("../../../git_repositories/cape"))
+```
+
+```{r load_data}
+lps <- read_cross2(here("Data", "qtl2_files_mod", "qtl2_files", "lps.yaml"))
+genoprobs <- calc_genoprob(lps)
+
+lps_cape <- qtl2_to_cape(lps)
+data_obj <- lps_cape$data_obj
+geno_obj <- lps_cape$geno_obj
+
+gene.info <- read.delim(here("Data", "general", "mouse_gene_info.txt"))
+```
+
+```{r plot_allele_effect}
+
+nearest_marker <- function(data_obj, gene.name, gene.info){
+    gene.idx <- which(gene.info[,"external_gene_name"] == gene.name)
+    if(length(gene.idx) == 0){stop(paste("Cannot find", gene.name))}
+    gene.chr <- gene.info[gene.idx, "chromosome_name"]
+    gene.pos <- gene.info[gene.idx, "start_position"]
+    chr.idx <- which(data_obj$chromosome == gene.chr)
+    chr.pos <- data_obj$marker_location[chr.idx]
+    nearest.idx <- get.nearest.pt(chr.pos, gene.pos)
+    nearest.marker <- data_obj$geno_names[[3]][chr.idx[nearest.idx]]
+    return(nearest.marker)
+}
+
+```
+
+```{r gene}
+gene.name <- "Fshr"
+```
+
+Sasha is interested in the `r gene.name` locus. He suspects that 
+among females there is selection against MOLF homozygotes at this 
+locus. He has new numbers that I will combine with old numbers to 
+test this hypothesis.
+
+The original F2 counts at this locus are shown below.
+
+```{r female_ratios, fig.width = 10, fig.height = 6}
+gene.marker <- nearest_marker(data_obj, gene.name, gene.info)
+f.idx <- which(data_obj$pheno[,"sex"] == 0)
+m.idx <- which(data_obj$pheno[,"sex"] == 1)
+gene.f.geno <- bin.vector(geno_obj[f.idx,2,gene.marker], c(0, 0.5, 1))
+gene.m.geno <- bin.vector(geno_obj[m.idx,2,gene.marker], c(0, 0.5, 1))
+f.geno.counts <- table(gene.f.geno)
+m.geno.counts <- table(gene.m.geno)
+names(f.geno.counts) <- names(m.geno.counts) <- c("B6/B6", "B6/MOLF", "MOLF/MOLF")
+#barplot_with_num(f.geno.counts)
+#barplot_with_num(m.geno.counts)
+```
+
+Do these ratios differ from the expected?
+
+
+```{r freq_fun}
+
+
+plot_hw <- function(obs.freq, main = ""){
+    p_freq = 0.5 #set all to 0.5 because this is an F2
+    q_freq <- 1-p_freq
+    hw_exp <- c(p_freq^2, 2*p_freq*q_freq, q_freq^2)*sum(obs.freq)
+    chisq <- sum(sapply(1:length(hw_exp), function(x) (obs.freq[x] - hw_exp[x])^2/hw_exp[x]))
+    chisq.p <- 1-pchisq(chisq, 1)
+    maxy <- max(c(hw_exp, obs.freq))
+    freq.table <- rbind(hw_exp, obs.freq)
+    rownames(freq.table) <- c("Expected", "Observed")
+    a <- barplot(rbind(hw_exp, obs.freq), beside = TRUE, main = paste(main, "\np =", signif(chisq.p, 2)), 
+        col = c("#7fc97f", "#beaed4"), ylab = "Count", ylim = c(0, maxy*1.1))
+    text(a[1,], y = hw_exp+(maxy*0.025), labels = signif(hw_exp, 2))
+    text(a[2,], y = obs.freq+(maxy*0.025), labels = signif(obs.freq, 2))
+    legend("topleft", fill =  c("#7fc97f", "#beaed4"), legend = c("Expected", "Observed"))
+    result <- list("Frequencies" = freq.table, "p" = chisq.p)
+    invisible(result)
+}
+```
+
+
+```{r expect, fig.width = 10, fig.height = 5}
+par(mfrow = c(1,2))
+test.f <- plot_hw(f.geno.counts, main = "Females")
+test.m <- plot_hw(m.geno.counts, main = "Males")
+mtext("Original F2", side = 3, outer = TRUE, line = -1.5, cex = 1.2, font = 2)
+```
+
+The new data are that at this locus there were
+19 B6/B6, 52 Hets, and 15 MOLF/MOLF. Does this
+change the calculation?
+
+```{r new_freq, fig.height = 5, fig.width = 5}
+new.freq  <- c(19, 52, 15)
+total.freq <- f.geno.counts+new.freq
+test.new <- plot_hw(total.freq, 
+    main = paste("Genotype Counts, Females,", 
+    gene.name, "locus"))
+```

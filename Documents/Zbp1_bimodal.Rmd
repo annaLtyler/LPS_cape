@@ -1,5 +1,5 @@
 ---
-title: "Zbp1 bimodal"
+title: "Lethality"
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output: 
   html_document:
@@ -14,10 +14,12 @@ params:
 
 ## Introduction
 
-The purpose of this workflow is to look for potential genetic
-causes of a bimodal distribution in temperature at 7 hours
-post LPS injection in MOLF/B6 heterozygotes. It is possible that
-there is a second locus that is driving this split.
+The purpose of this workflow is to look for potential 
+genetic causes of a bimodal distribution in temperature at 
+7 hours post LPS injection in MOLF/B6 heterozygotes. It is 
+possible that there is a second locus that is driving this 
+split.
+
 
 ```{r set_path, message = FALSE, error = FALSE, warning = FALSE}
 rm(list = ls())
@@ -129,6 +131,7 @@ place to split the hets into high and low temperature animals.
 zbp1.geno <- round(geno_obj[,,which(data_obj$geno_names[[3]] == zbp1.marker)][,2]*100)/100
 
 f.idx <- which(data_obj$pheno[,"sex"] == 0)
+m.idx <- which(data_obj$pheno[,"sex"] == 1)
 stripchart(data_obj$pheno[f.idx,"X7h"]~zbp1.geno[f.idx], vertical = TRUE, method = "jitter",
     pch = 16, col = "#ef8a62", group.names = c("B6 hom", "het", "MOLF hom"), 
     ylab = "Body Temperature")
@@ -219,6 +222,9 @@ is shown.
 
 
 ```{r find_max, results = "asis"}
+plot.all.animals = FALSE #Sasha asked for some specific plots for the Mov10 locus
+                         #the code for that is wrapped in the plot.all.animals section
+
 large.effect <- which(-log10(test.pval) > nlog.thresh)
 marker.idx <- match(names(large.effect), data_obj$geno_names$locus)
 large.effect.chr <- data_obj$chromosome[marker.idx]
@@ -240,6 +246,53 @@ for(ch in 1:length(u_chr)){
     stripchart(het.pheno~test.geno[,effect.idx], vertical = TRUE, add = TRUE, col = "#ef8a62",
         pch = 16, method = "jitter")
     abline(h = 34)
+
+    if(plot.all.animals){
+        #all mice
+        par(mfrow = c(1,2))
+        all.pheno <- data_obj$pheno[,"X7h",drop=FALSE]
+        all.geno <- as.factor(round(geno_obj[,2,effect.idx]*100)/100)
+        model <- lm(all.pheno[f.idx]~all.geno[f.idx])
+        pval <- anova(model)$"Pr(>F)"[1]
+        plot(all.pheno[f.idx]~all.geno[f.idx],
+            ylab = "Body Temperature", main = paste("Females\np =", signif(pval, 2)),
+            xlab =  paste0("Chr", effect.chr, "; ", signif(max.loc/1e6, 3), "Mb\n"))
+        stripchart(all.pheno[f.idx]~all.geno[f.idx],
+            method = "jitter", pch = 16, col = "#ef8a62", vertical = TRUE, add = TRUE)
+        abline(h = 34)
+
+        #sub.test <- lapply(levels(all.geno[f.idx]), function(x) t.test(all.pheno[f.idx[which(all.geno[f.idx] == x)]], alternative = "greater", mu = 34))
+        #sapply(sub.test, function(x) x$p.value)
+
+        model <- lm(all.pheno[m.idx]~all.geno[m.idx])
+        pval <- anova(model)$"Pr(>F)"[1]
+        plot(all.pheno[m.idx]~all.geno[m.idx],
+            ylab = "Body Temperature", main = paste("Males\np =", signif(pval, 2)),
+            xlab =  paste0("Chr", effect.chr, "; ", signif(max.loc/1e6, 3), "Mb\n"))
+        stripchart(all.pheno[m.idx]~all.geno[m.idx],
+            method = "jitter", pch = 16, col = "#ef8a62", vertical = TRUE, add = TRUE)
+        abline(h = 34)
+
+        #sub.test <- lapply(levels(all.geno[m.idx]), function(x) t.test(all.pheno[m.idx[which(all.geno[f.idx] == x)]], alternative = "greater", mu = 34))
+        #sapply(sub.test, function(x) x$p.value)
+
+
+        #are high-temperature mice enriched in any of the genotypes?
+        num.high <- sapply(c(0, 0.5, 1), function(x) length(intersect(which(all.geno[f.idx] == x), which(all.pheno[f.idx] > 34))))
+        num.low <- sapply(c(0, 0.5, 1), function(x) length(intersect(which(all.geno[f.idx] == x), which(all.pheno[f.idx] < 34))))
+        fmat <- rbind(num.high, num.low)
+        #pheatmap(fmat, cluster_rows = FALSE, cluster_cols = FALSE, display_numbers = TRUE)
+        fp <- fisher.test(fmat)$p.value
+
+        num.high <- sapply(c(0, 0.5, 1), function(x) length(intersect(which(all.geno[m.idx] == x), which(all.pheno[m.idx] > 34))))
+        num.low <- sapply(c(0, 0.5, 1), function(x) length(intersect(which(all.geno[m.idx] == x), which(all.pheno[m.idx] < 34))))
+        mmat <- rbind(num.high, num.low)
+        #pheatmap(mmat, cluster_rows = FALSE, cluster_cols = FALSE, display_numbers = TRUE)
+        mp <- fisher.test(mmat)$p.value
+
+        
+
+    }
     cat("\n\n")
 }
 
@@ -484,13 +537,31 @@ test.decomp <- plot.decomp(selected.geno,
     cols = temp.cols, pc = min(c(3, length(selected.markers))))
 ```
 
+```{r geno_img, eval = FALSE}
+row.order <- order(test.df[,"pheno"])
+temp.factor <- data.frame("high_temp" = as.factor(as.numeric(test.df[,"pheno"] > 34)))
+rownames(temp.factor) <- rownames(test.df)
+
+plot.mat <- selected.geno[row.order,]
+colnames(plot.mat) <- apply(marker.df, 1, function(x) paste(x[2:3], collapse = "_"))
+col.order <- order(marker.df[,"Coef"])
+pheatmap(t(plot.mat), cluster_rows = FALSE, cluster_cols = FALSE, 
+    annotation_col = temp.factor, show_colnames = FALSE, main = "ordered by genomic position")
+
+pheatmap(t(plot.mat[,col.order]), cluster_rows = FALSE, cluster_cols = FALSE, 
+    annotation_col = temp.factor, show_colnames = FALSE, main = "Ordered by effect size")
+
+
+```
+
 The following bar plot shows the correlation of each PC above
-with body temperature. The first PC is very highly correlated
+with body temperature. The second PC is very highly correlated
 with body temperature.
 
-```{r pc_cor}
+```{r pc_cor, fig.width = 6, fig.height = 6}
 barplot_with_num(apply(test.decomp$u, 2, function(x) signif(cor(x, lasso.pheno), 2)),
-    main = "PC correlation with temperature at 7 hrs", ylab = "Pearson Correlation")
+    main = "PC correlation with temperature at 7 hrs", ylab = "Pearson Correlation",
+    names = paste0("PC", 1:ncol(test.decomp$u)), ylim = c(-0.6, 1))
 ```
 
 The following plots show the PCs plotted against body temperature.
@@ -505,6 +576,35 @@ for(i in 1:ncol(test.decomp$u)){
         pch = 16, main = paste("PC", i), col = temp.cols)
     abline(h = 34, v = 0)
 }
+
+```
+
+What are the effects of positive and negative markers?
+The plots below show the effects of the most positive 
+and most negative markers.
+
+They both have bimodal patterns, but the alternate
+allele pushes the phenotype in opposite directions.
+
+```{r single_marker, fig.width = 8, fig.height = 4}
+par(mfrow = c(1,2))
+
+max.pos <- which.max(marker.df[,"Coef"])
+marker.name <- marker.df[max.pos,"marker"]
+common.ind <- intersect(rownames(geno_obj), names(lasso.pheno))
+boxplot(lasso.pheno[common.ind]~round(geno_obj[common.ind,2,marker.name], 2),
+    xlab = "Genotype", ylab = "Temperature", main = "Most Positive Marker")
+stripchart(lasso.pheno[common.ind]~round(geno_obj[common.ind,2,marker.name], 2),
+    method = "jitter", add = TRUE, vertical = TRUE, pch = 16)
+
+
+max.neg <- which.min(marker.df[,"Coef"])
+marker.name <- marker.df[max.neg,"marker"]
+common.ind <- intersect(rownames(geno_obj), names(lasso.pheno))
+boxplot(lasso.pheno[common.ind]~round(geno_obj[common.ind,2,marker.name], 2),
+    xlab = "Genotype", ylab = "Temperature", main = "Most Negative Marker")
+stripchart(lasso.pheno[common.ind]~round(geno_obj[common.ind,2,marker.name], 2),
+    method = "jitter", add = TRUE, vertical = TRUE, pch = 16)
 
 ```
 
